@@ -1,0 +1,69 @@
+/* "How others answered" chart in the result overlay. */
+
+/* give the chart more of the overlay than the old list had */
+@media (min-width: 641px) {
+  .reveal { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.3fr); }
+}
+
+.answer-chart {
+  padding-left: 24px; border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+}
+.ac-row {
+  display: grid; grid-template-columns: 14px minmax(0, 8.6rem) minmax(80px, 1fr) 5.6rem; column-gap: 10px; align-items: center;
+}
+
+.ac-row { position: relative; padding: 8px 8px; margin: 0 -8px; border-radius: 8px; outline: none; cursor: default; }
+.ac-row:hover, .ac-row:focus-visible { background: color-mix(in srgb, var(--bg) 75%, transparent); }
+.ac-mark { font-weight: 800; }
+.ac-row.ok .ac-mark { color: var(--ok); }
+.ac-row.bad .ac-mark { color: var(--bad); }
+.ac-name { font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ac-name .tag { margin-left: 6px; color: var(--accent); border-color: var(--accent); }
+.ac-row.opp .ac-name { color: var(--accent); }
+.ac-val .ans { font-size: 0.85em; }
+.ac-num { color: var(--ink); font-variant-numeric: tabular-nums; display: inline-block; min-width: 3.6em; text-align: right; }
+.ac-val { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.76rem; color: var(--muted); text-align: right; white-space: nowrap; }
+
+/* the track: score bar from 0 and a threshold tick. Neutral colors only. */
+.ac-track { position: relative; height: 16px; border-radius: 4px; background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.ac-bar {
+  position: absolute; left: 0; top: 5px; height: 6px; width: var(--s); border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+.ac-thr { position: absolute; left: var(--t); top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+.ac-dot {
+  position: absolute; left: var(--s); top: 50%; width: 11px; height: 11px; border-radius: 50%;
+  translate: -50% -50%; border: 2px solid var(--surface);
+}
+.ac-dot { background: var(--ink); } /* neutral: the bar is the answer, not the grade */
+
+.ac-legend {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; padding-left: 24px;
+  font-size: 0.68rem; color: var(--muted);
+}
+.ac-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.ac-legend i { display: inline-block; }
+.lg-bar { width: 16px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 55%, transparent); }
+.lg-thr { width: 2px; height: 11px; background: var(--ink); }
+
+/* the LLM's one line of reasoning */
+.ac-quote {
+  grid-column: 2 / -1; font-size: 0.78rem; color: var(--muted); font-style: italic; line-height: 1.35; margin-top: 3px;
+}
+
+/* numbers on hover / focus */
+.ac-tip {
+  position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 5; pointer-events: none;
+  background: var(--ink); color: var(--bg); font-size: 0.76rem; line-height: 1.35; white-space: nowrap;
+  padding: 6px 9px; border-radius: 7px; box-shadow: var(--shadow);
+  opacity: 0; transform: translateY(3px); transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.ac-tip b { font-weight: 700; }
+.ac-row:hover .ac-tip, .ac-row:focus-visible .ac-tip { opacity: 1; transform: none; }
+
+@media (max-width: 640px) {
+  .answer-chart { padding: 14px 0 0; border-left: none; border-top: 1px solid var(--line); }
+  .ac-row { grid-template-columns: 14px minmax(0, 7rem) minmax(60px, 1fr) 5.2rem; column-gap: 8px; }
+  .ac-tip { white-space: normal; max-width: 260px; }
+}

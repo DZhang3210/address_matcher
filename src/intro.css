@@ -1,0 +1,142 @@
+/* Intro screen extras: paper-style model figures (versus tabs) and the how-it-works demo (free play). */
+
+.intro { padding-top: 36px; }
+button.brand { background: none; border: none; padding: 0; color: inherit; align-self: flex-start; }
+button.brand:hover .pin { transform: rotate(90deg); }
+.pin { display: inline-block; transition: transform 0.3s ease; }
+.diagram, .demo-wrap { margin-top: 44px; text-align: left; }
+.diagram-title {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+  font-weight: 700; margin: 0 0 14px; text-align: center;
+}
+
+/* ---------- Architecture figures, drawn in the app's own palette ---------- */
+.figure-card {
+  margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 18px 18px 14px; box-shadow: var(--shadow);
+}
+.fig-scroll { overflow-x: auto; }
+.fig { width: 100%; height: auto; max-height: 230px; display: block; }
+.figure-card figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 10px; line-height: 1.45; }
+.fig-n { font-weight: 700; color: var(--ink); margin-right: 4px; }
+
+.fig .t { fill: var(--ink); font-family: Inter, system-ui, sans-serif; font-size: 12.5px; }
+.fig .t.strong { font-weight: 700; font-size: 14px; }
+.fig .t.big, .fig .m.big { font-size: 16px; }
+.fig .t.huge { font-size: 26px; }
+.fig .s { fill: var(--muted); font-family: Inter, system-ui, sans-serif; font-size: 11px; }
+.fig .m { fill: var(--muted); font-family: "JetBrains Mono", ui-monospace, monospace; font-style: italic; font-size: 12px; }
+.fig .wire { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.fig .arrowhead { fill: var(--muted); }
+.fig .bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; }
+.fig .bx.soft { fill: color-mix(in srgb, var(--muted) 14%, var(--surface)); }
+.fig .bx.accent { fill: color-mix(in srgb, var(--accent) 20%, var(--surface)); stroke: var(--accent); }
+.fig .block { fill: color-mix(in srgb, var(--bg) 70%, transparent); stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.fig .node { fill: var(--surface); stroke: var(--muted); stroke-width: 1.4; }
+.fig .node.soft { fill: color-mix(in srgb, var(--muted) 14%, var(--surface)); }
+.fig .node.accent { fill: color-mix(in srgb, var(--accent) 20%, var(--surface)); stroke: var(--accent); }
+.fig .curve { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+.fig .venn { stroke-width: 1.4; }
+.fig .venn.a { fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: var(--accent); }
+.fig .venn.b { fill: color-mix(in srgb, var(--muted) 16%, transparent); stroke: var(--muted); }
+.paper-refs { text-align: center; font-size: 0.82rem; color: var(--muted); margin: 14px 0 0; line-height: 1.6; }
+.paper-refs a { color: var(--ink); text-underline-offset: 3px; }
+.paper-refs a:hover { color: var(--accent); }
+
+/* ---------- How-it-works demo: two cards, Wordle-style tiles ---------- */
+.demo { pointer-events: none; user-select: none; }
+.demo-cards { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; }
+.demo-card {
+  min-height: 0;
+  transition: transform 0.35s cubic-bezier(.2,.9,.25,1.2), border-color 0.2s, box-shadow 0.3s, background 0.2s,
+    filter 0.3s, opacity 0.3s;
+}
+.tile-wrap { display: flex; flex-wrap: wrap; gap: 5px; }
+.tile {
+  --tile-bg: var(--surface); --tile-border: var(--line); --tile-ink: var(--ink);
+  display: inline-grid; place-items: center; min-height: 32px; padding: 0 8px; border-radius: 6px;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.86rem; font-weight: 500;
+  background: var(--surface); border: 2px solid var(--line); color: var(--ink);
+}
+/* Word colors describe the comparison, never right/wrong (green/red are reserved for that). */
+.tile.match { --tile-bg: color-mix(in srgb, var(--muted) 30%, var(--surface)); --tile-border: color-mix(in srgb, var(--muted) 45%, var(--surface)); --tile-ink: var(--ink); }
+.tile.equiv { --tile-bg: var(--equiv); --tile-border: var(--equiv); --tile-ink: #fff; }
+.tile.miss  { --tile-bg: var(--accent); --tile-border: var(--accent); --tile-ink: #fff; }
+.tile.flip { animation: tile-flip var(--flip) ease-in-out calc(var(--i) * var(--stagger)) both; }
+.tile.static { background: var(--tile-bg); border-color: var(--tile-border); color: var(--tile-ink); min-height: 24px; padding: 0 7px; font-size: 0.72rem; }
+@keyframes tile-flip {
+  0%   { transform: rotateX(0); background: var(--surface); border-color: var(--line); color: var(--ink); }
+  49%  { transform: rotateX(90deg); background: var(--surface); border-color: var(--line); color: var(--ink); }
+  50%  { transform: rotateX(90deg); background: var(--tile-bg); border-color: var(--tile-border); color: var(--tile-ink); }
+  100% { transform: rotateX(0); background: var(--tile-bg); border-color: var(--tile-border); color: var(--tile-ink); }
+}
+
+.demo .divider { justify-content: center; }
+.demo .pick { width: 54px; height: 54px; }
+.demo .pick .sym { font-size: 1.6rem; }
+.demo .pick.pressing { transform: scale(0.9); color: var(--surface); background: var(--ink); border-color: var(--ink); }
+
+/* blur in / out */
+.demo.phase-hidden .demo-card, .demo.phase-exit .demo-card { filter: blur(12px); opacity: 0; }
+.demo.phase-hidden .demo-card.left { transform: translateX(-16px); }
+.demo.phase-hidden .demo-card.right { transform: translateX(16px); }
+.demo.phase-hidden .demo-card { transition: none; }
+
+/* verdict stamp, centered over the pair */
+.stamp {
+  position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 2;
+  font-weight: 900; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 4px 14px; border: 4px solid currentColor; border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  animation: stamp 0.38s cubic-bezier(.3,1.6,.5,1) both;
+}
+.stamp.same, .stamp.diff { color: var(--ink); }
+@keyframes stamp {
+  from { transform: scale(2.2) rotate(-4deg); opacity: 0; }
+  to   { transform: scale(1) rotate(-9deg); opacity: 1; }
+}
+
+/* right guess: both cards lift with a green glow. wrong: they fold in a little and turn red */
+.demo.ok .demo-card {
+  transform: translateY(-8px); border-color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--ok) 28%, transparent);
+}
+/* wrong: the pair gets knocked out of line. Deliberately NOT mirrored: both tilt the
+   same way by different amounts, offsets and timing, so it reads as "out of whack". */
+.demo.bad .demo-card { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--surface)); }
+.demo.bad .demo-card.left { transform-origin: 30% 80%; animation: askew-left 0.55s ease-out both; }
+.demo.bad .demo-card.right { transform-origin: 70% 20%; animation: askew-right 0.55s 0.07s ease-out both; }
+@keyframes askew-left {
+  0% { transform: none; } 30% { transform: rotate(-5deg) translate(-4px, 7px); }
+  60% { transform: rotate(-2deg) translate(-1px, 3px); } 100% { transform: rotate(-3.4deg) translate(-3px, 7px); }
+}
+@keyframes askew-right {
+  0% { transform: none; } 30% { transform: rotate(-2.2deg) translate(7px, -5px); }
+  60% { transform: rotate(-0.4deg) translate(3px, -1px); } 100% { transform: rotate(-1.1deg) translate(6px, -4px); }
+}
+.demo.phase-exit.ok .demo-card { transform: translateY(-14px); }
+
+.demo-caption { text-align: center; min-height: 1.6em; margin: 18px 0 0; font-weight: 600; transition: color 0.3s; }
+.demo.ok .demo-caption { color: var(--ok); }
+.demo.bad .demo-caption { color: var(--bad); }
+.demo-mark { font-weight: 800; margin-right: 6px; }
+
+.tile-legend {
+  display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center; margin-top: 12px;
+  font-size: 0.8rem; color: var(--muted);
+}
+.tile-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+
+@media (max-width: 640px) {
+  .figure-card { padding: 14px 10px 12px; }
+  .fig { min-width: 600px; } /* keep labels legible; the figure scrolls sideways instead */
+  .demo-cards { grid-template-columns: 1fr; }
+  .demo .divider { flex-direction: row; }
+  .demo .pick { width: 64px; height: 44px; }
+  .tile { min-height: 28px; padding: 0 6px; font-size: 0.78rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tile.flip { animation: none; background: var(--tile-bg); border-color: var(--tile-border); color: var(--tile-ink); }
+  .stamp { animation: none; }
+  .demo-card { transition: none; animation: none !important; transform: none !important; filter: none !important; opacity: 1 !important; }
+}
