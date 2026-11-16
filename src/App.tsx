@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
-import { PAIRS } from "./data/pairs";
+import { createPortal } from "react-dom";
+import { PAIRS } from "./data/game";
 import { MODELS, MODEL_BY_ID, PREDICTIONS, accuracy, isRight, type Model } from "./data/models";
-import { addVote, crowdFor } from "./data/crowd";
 import { diffSummary } from "./lib/text";
 import { AddressCard } from "./AddressCard";
 import { ModelDiagram } from "./Diagrams";
 import { Demo } from "./Demo";
+import { ShareButton } from "./Share";
 import { AnswerChart } from "./AnswerChart";
 import type { AddressPair, Difficulty } from "./types";
 
@@ -51,6 +52,20 @@ function save(key: string, value: string) {
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+/**
+ * Free play: endless, the whole pool shuffled (another shuffle is appended when it runs out).
+ * Versus a model: ROUND_SIZE pairs, OPPONENT_MISSES it gets wrong + the rest random, shuffled together.
+ */
+const OPPONENT_MISSES = 8;
+const PROGRESS_WINDOW = 10; // dots shown in endless mode: the latest answers + the current pair
+function dealRound(opponent?: Model): AddressPair[] {
+  if (!opponent) return shuffle(PAIRS);
+  const misses = shuffle(PAIRS.filter((p) => !isRight(opponent.id, p))).slice(0, OPPONENT_MISSES);
+  const picked = new Set(misses.map((p) => p.id));
+  const rest = shuffle(PAIRS.filter((p) => !picked.has(p.id))).slice(0, ROUND_SIZE - misses.length);
+  return shuffle([...misses, ...rest]);
+}
+
 /* ================================ App shell ================================ */
 
 const TABS = [
@@ -75,15 +90,23 @@ export default function App() {
   };
   const opponent = tab.startsWith("vs:") ? MODEL_BY_ID[tab.slice(3)] : undefined;
 
+  // On a narrow screen the tab row scrolls sideways: keep the active tab in view.
+  useEffect(() => {
+    document.querySelector(".tab.active")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [tab]);
+
   return (
     <div className="shell">
       <header className="topbar">
-        <button className="brand" onClick={() => setTab("play")} title="Back to the start">
-          <span className="pin" aria-hidden>
-            ⌖
-          </span>
-          Same Place?
-        </button>
+        <div className="topbar-row">
+          <button className="brand" onClick={() => setTab("play")} title="Back to the start">
+            <span className="pin" aria-hidden>
+              ⌖
+            </span>
+            Same Place?
+          </button>
+          <ShareButton />
+        </div>
         <nav className="tabs" aria-label="Modes">
           {TABS.map((t) => (
             <button
@@ -96,13 +119,49 @@ export default function App() {
             </button>
           ))}
         </nav>
+        {/* Phones: three items instead of eight; the six "Beat X" tabs fold into one picker. */}
+        {/* Phones: two rows that wrap instead of one row that scrolls. Row 1 = the two main pages, row 2 = every "Beat X". */}
+        <nav className="tabs-compact" aria-label="Modes">
+          <div className="tc-row">
+            <button
+              className={"tab" + (tab === "play" ? " active" : "")}
+              onClick={() => setTab("play")}
+              aria-current={tab === "play" ? "page" : undefined}
+            >
+              Free play
+            </button>
+            <button
+              className={"tab" + (tab === "models" ? " active" : "")}
+              onClick={() => setTab("models")}
+              aria-current={tab === "models" ? "page" : undefined}
+            >
+              The models
+            </button>
+          </div>
+          <div className="tc-beat">
+            <span className="tc-label">Beat</span>
+            {MODELS.map((m) => (
+              <button
+                key={m.id}
+                className={"chip" + (tab === `vs:${m.id}` ? " active" : "")}
+                onClick={() => setTab(`vs:${m.id}`)}
+                aria-current={tab === `vs:${m.id}` ? "page" : undefined}
+              >
+                {m.short}
+              </button>
+            ))}
+          </div>
+        </nav>
       </header>
 
-      {tab === "models" ? (
-        <Guide onChallenge={(id) => setTab(`vs:${id}`)} />
-      ) : (
-        <Game key={`${tab}:${visit}`} opponent={opponent} />
-      )}
+      {/* Keyed per tab so every switch replays the fade-in. */}
+      <div key={tab} className="page-in">
+        {tab === "models" ? (
+          <Guide onChallenge={(id) => setTab(`vs:${id}`)} />
+        ) : (
+          <Game key={`${tab}:${visit}`} opponent={opponent} />
+        )}
+      </div>
     </div>
   );
 }
@@ -111,6 +170,7 @@ export default function App() {
 
 function Game({ opponent }: { opponent?: Model }) {
   const bestKey = `${BEST_KEY}:${opponent ? opponent.id : "free"}`;
+  const endless = !opponent; // free play has no fixed length
   const [phase, setPhase] = useState<Phase>("intro");
   const [deck, setDeck] = useState<AddressPair[]>([]);
   const [index, setIndex] = useState(0);
@@ -118,6 +178,7 @@ function Game({ opponent }: { opponent?: Model }) {
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [peek, setPeek] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false); // endless mode: "End game?" is showing
   const [best, setBest] = useState(() => Number(load(bestKey)) || 0);
 
   const current = deck[index];
@@ -128,7 +189,7 @@ function Game({ opponent }: { opponent?: Model }) {
   const oppRight = opponent ? answers.filter((a) => isRight(opponent.id, a.pair)).length : 0;
 
   const start = useCallback(() => {
-    setDeck(shuffle(PAIRS).slice(0, ROUND_SIZE));
+    setDeck(dealRound(opponent));
     setIndex(0);
     setAnswers([]);
     setStreak(0);
@@ -136,7 +197,7 @@ function Game({ opponent }: { opponent?: Model }) {
     setPeek(false);
     setPhase("playing");
     window.scrollTo({ top: 0 });
-  }, []);
+  }, [opponent]);
 
   // Start with a short exit animation on the current screen, then build the game in.
   const [leaving, setLeaving] = useState(false);
@@ -157,7 +218,6 @@ function Game({ opponent }: { opponent?: Model }) {
       const correct = guess === current.isMatch;
       const newStreak = correct ? streak + 1 : 0;
       const points = correct ? POINTS[current.difficulty] + STREAK_BONUS * (newStreak - 1) : 0;
-      addVote(current.id, guess);
       setStreak(newStreak);
       setBestStreak((b) => Math.max(b, newStreak));
       setAnswers((as) => [...as, { pair: current, guess, correct, points }]);
@@ -165,19 +225,27 @@ function Game({ opponent }: { opponent?: Model }) {
     [current, revealed, streak]
   );
 
+  const finish = useCallback(() => {
+    if (answers.length === 0) return;
+    setPeek(false);
+    setConfirmEnd(false);
+    if (score > best) {
+      setBest(score);
+      save(bestKey, String(score));
+    }
+    setPhase("done");
+  }, [answers.length, score, best, bestKey]);
+
   const next = useCallback(() => {
     if (!revealed) return;
-    setPeek(false);
     if (index + 1 >= deck.length) {
-      if (score > best) {
-        setBest(score);
-        save(bestKey, String(score));
-      }
-      setPhase("done");
-    } else {
-      setIndex((i) => i + 1);
+      if (!endless) return finish();
+      setDeck((d) => [...d, ...shuffle(PAIRS)]); // endless: deal the pool again
     }
-  }, [revealed, index, deck.length, score, best, bestKey]);
+    setPeek(false);
+    setConfirmEnd(false);
+    setIndex((i) => i + 1);
+  }, [revealed, index, deck.length, endless, finish]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -194,13 +262,18 @@ function Game({ opponent }: { opponent?: Model }) {
         else if (k === "n" || k === "arrowright") answer(false);
       } else if (k === "s") {
         setPeek((p) => !p);
+      } else if (k === "e" && endless) {
+        if (confirmEnd) finish();
+        else setConfirmEnd(true);
+      } else if (confirmEnd && (k === "escape" || k === "n")) {
+        setConfirmEnd(false);
       } else if (k === "enter" || k === " ") {
         next();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, revealed, answer, next, begin]);
+  }, [phase, revealed, answer, next, begin, finish, endless, confirmEnd]);
 
   if (phase === "intro") return <Intro best={best} onStart={begin} leaving={leaving} opponent={opponent} />;
   if (phase === "done")
@@ -217,11 +290,14 @@ function Game({ opponent }: { opponent?: Model }) {
     );
   if (!current) return null;
 
-  const isLast = index + 1 >= deck.length;
+  const isLast = !endless && index + 1 >= deck.length;
   const showOverlay = revealed && !peek;
+  // Endless: a rolling window of dots ending at the current pair. Fixed round: one dot per pair.
+  const dotStart = endless ? Math.max(0, index + 1 - PROGRESS_WINDOW) : 0;
+  const dotEnd = endless ? index + 1 : deck.length;
 
   return (
-    <main className={"play" + (revealed && peek ? " peeking" : "")}>
+    <main className={"play" + (revealed ? " answered" : "") + (revealed && peek ? " peeking" : "")}>
       <div className="hud">
         {opponent ? (
           <div className="versus-score" aria-label="Head to head">
@@ -234,19 +310,22 @@ function Game({ opponent }: { opponent?: Model }) {
         ) : null}
         <Stat label="Score" value={score} />
         <Stat label="Streak" value={streak} hot={streak >= 3} />
-        <Stat label="Pair" value={`${index + 1}/${deck.length}`} />
+        <Stat label="Pair" value={endless ? `${index + 1}` : `${index + 1}/${deck.length}`} />
       </div>
 
       <div className="progress" aria-hidden>
-        {deck.map((_, i) => (
+        {deck.slice(dotStart, dotEnd).map((_, j) => {
+          const i = dotStart + j;
+          return (
           <span
             key={i}
-            style={{ "--i": i } as CSSProperties}
+            style={{ "--i": j } as CSSProperties}
             className={
               "dot " + (i < answers.length ? (answers[i].correct ? "ok" : "bad") : i === index ? "now" : "")
             }
           />
-        ))}
+          );
+        })}
       </div>
 
       <p className="prompt">
@@ -290,6 +369,10 @@ function Game({ opponent }: { opponent?: Model }) {
             peek={peek}
             onNext={next}
             onPeek={() => setPeek((p) => !p)}
+            onEnd={endless ? () => setConfirmEnd(true) : undefined}
+            confirmEnd={confirmEnd}
+            onConfirmEnd={finish}
+            onCancelEnd={() => setConfirmEnd(false)}
             isLast={isLast}
           />
         )}
@@ -321,6 +404,10 @@ function Reveal({
   peek,
   onNext,
   onPeek,
+  onEnd,
+  confirmEnd,
+  onConfirmEnd,
+  onCancelEnd,
   isLast,
 }: {
   answer: Answer;
@@ -328,6 +415,11 @@ function Reveal({
   peek: boolean;
   onNext: () => void;
   onPeek: () => void;
+  /** Endless mode only: ask to stop (then confirm or cancel). */
+  onEnd?: () => void;
+  confirmEnd?: boolean;
+  onConfirmEnd?: () => void;
+  onCancelEnd?: () => void;
   isLast: boolean;
 }) {
   const { pair, guess, correct, points } = answer;
@@ -364,10 +456,43 @@ function Reveal({
           <button className="ghost" onClick={onPeek} aria-pressed={peek}>
             {peek ? "Show result" : "Show pair"} <kbd>S</kbd>
           </button>
+          {onEnd && (
+            <button className="danger" onClick={onEnd}>
+              <span className="lbl-long">End &amp; see results</span>
+              <span className="lbl-short">End</span> <kbd>E</kbd>
+            </button>
+          )}
         </div>
       </div>
 
       <AnswerChart pair={pair} opponent={opponent} />
+
+      {confirmEnd &&
+        onConfirmEnd &&
+        onCancelEnd &&
+        createPortal(
+          <div className="modal-backdrop" onClick={onCancelEnd}>
+            <div
+              className="modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="end-q"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="end-q">End the game?</h2>
+              <p>You'll see your results and how every model did on the same pairs.</p>
+              <div className="modal-actions">
+                <button className="ghost" onClick={onCancelEnd}>
+                  Keep playing <kbd>Esc</kbd>
+                </button>
+                <button className="danger solid" onClick={onConfirmEnd} autoFocus>
+                  Yes, end it <kbd>E</kbd>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -393,8 +518,8 @@ function Intro({
             Beat the <span className="hl">{opponent.short}</span>.
           </h1>
           <p className="lede">
-            {opponent.blurb} It gets <strong>{pct(accuracy(opponent.id))}</strong> of all pairs right. Can you beat it
-            over {ROUND_SIZE}?
+            {opponent.blurb} It gets <strong>{pct(accuracy(opponent.id))}</strong> of all pairs right, but this round
+            stacks the deck: {OPPONENT_MISSES} of the {ROUND_SIZE} pairs are ones it gets wrong. Can you beat it?
             {opponent.placeholder && <span className="lede-note"> (Its answers are placeholders for now.)</span>}
           </p>
         </>
@@ -404,8 +529,8 @@ function Intro({
             Addresses are <span className="hl">weird</span>.
           </h1>
           <p className="lede">
-            Two map datasets, two records. Same place or not? You get {ROUND_SIZE} pairs. Harder pairs are worth more,
-            and streaks add a bonus.
+            Two map datasets, two records. Same place or not? Play as long as you like and stop whenever you want.
+            Harder pairs are worth more, and streaks add a bonus.
           </p>
         </>
       )}
@@ -434,13 +559,6 @@ function Scoreboard({ answers, opponent }: { answers: Answer[]; opponent?: Model
   const n = answers.length;
   const rows = [
     { id: "you", name: "You", note: "", placeholder: false, right: answers.filter((a) => a.correct).length },
-    {
-      id: "players",
-      name: "Players (majority)",
-      note: "What most players answered on each pair.",
-      placeholder: true,
-      right: answers.filter((a) => crowdFor(a.pair).majorityRight).length,
-    },
     ...MODELS.map((m) => ({
       id: m.id,
       name: m.name,
@@ -454,7 +572,7 @@ function Scoreboard({ answers, opponent }: { answers: Answer[]; opponent?: Model
   return (
     <section className="board">
       <h2>You vs everyone</h2>
-      <p className="board-sub">Same {n} pairs.</p>
+      <p className="board-sub">Same {n} {n === 1 ? "pair" : "pairs"}.</p>
       {rows.map((r) => (
         <div
           key={r.id}
@@ -515,9 +633,9 @@ function Results({
     rating =
       right === answers.length
         ? "Flawless. You may be a geocoder."
-        : right >= 8
+        : right >= 0.8 * answers.length
           ? "Sharp eye."
-          : right >= 5
+          : right >= 0.5 * answers.length
             ? "Not bad. Addresses are hard."
             : "The addresses won this round.";
   }
@@ -578,9 +696,10 @@ function Guide({ onChallenge }: { onChallenge: (modelId: string) => void }) {
     <main className="guide">
       <h1>What each model is good at</h1>
       <p className="lede guide-lede">
-        Four ways to decide whether two records are the same address, from a few lines of string matching to a large
-        language model. Each one is scored below on all {PAIRS.length} pairs in the game. Only Token overlap actually
-        runs right now; the other three use placeholder answers until real model runs are plugged in.
+        Six ways to decide whether two records are the same address, from a few lines of string matching to a large
+        language model. Each one is scored below on all {PAIRS.length.toLocaleString()} pairs in the game: real
+        Connecticut addresses (Overture × Foursquare) from the test split, which none of the trained models saw in
+        training. Difficulty is how many of the five trained models get a pair wrong.
       </p>
 
       <div className="guide-table-wrap">
@@ -650,11 +769,12 @@ function Guide({ onChallenge }: { onChallenge: (modelId: string) => void }) {
             {misses.length > 0 && (
               <div className="ma-misses">
                 <span className="ma-misses-label">Misses in this set</span>
-                {misses.map((p) => (
-                  <span key={p.id} className="trap" title={p.a.lines.join(", ") + "  vs  " + p.b.lines.join(", ")}>
-                    {p.trap ?? p.id}
+                {misses.slice(0, 8).map((p) => (
+                  <span key={p.id} className="trap" title={p.trap ?? (p.isMatch ? "Same place" : "Different places")}>
+                    {p.a.lines.join(", ") + "  vs  " + p.b.lines.join(", ")}
                   </span>
                 ))}
+                {misses.length > 8 && <span className="ma-misses-label">+{(misses.length - 8).toLocaleString()} more</span>}
               </div>
             )}
             <button className="ghost" onClick={() => onChallenge(m.id)}>

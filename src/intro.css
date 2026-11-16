@@ -129,14 +129,33 @@ button.brand:hover .pin { transform: rotate(90deg); }
 
 @media (max-width: 640px) {
   .figure-card { padding: 14px 10px 12px; }
-  .fig { min-width: 600px; } /* keep labels legible; the figure scrolls sideways instead */
+  /* phones: the drawn figure gives way to the vertical step list */
+  .figure-card:has(.vflow) .fig-scroll { display: none; }
+  .fig { min-width: var(--fig-min, 600px); }
+  .figure-card .vflow { display: flex; }
   .demo-cards { grid-template-columns: 1fr; }
   .demo .divider { flex-direction: row; }
   .demo .pick { width: 64px; height: 44px; }
   .tile { min-height: 28px; padding: 0 6px; font-size: 0.78rem; }
+  .demo-card { text-align: center; }
+  .tile-wrap { justify-content: center; }
+  .demo .divider { justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .tile.flip { animation: none; background: var(--tile-bg); border-color: var(--tile-border); color: var(--tile-ink); }
   .stamp { animation: none; }
   .demo-card { transition: none; animation: none !important; transform: none !important; filter: none !important; opacity: 1 !important; }
 }
+
+/* Vertical pipeline (phones) */
+.vflow { display: none; flex-direction: column; align-items: stretch; gap: 22px; list-style: none; margin: 4px 0 6px; padding: 0; }
+.vstep {
+  position: relative; background: color-mix(in srgb, var(--muted) 12%, var(--surface)); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 14px; text-align: center; display: flex; flex-direction: column; gap: 3px;
+}
+.vstep.accent { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); border-color: var(--accent); }
+.vstep + .vstep::before { /* arrow from the step above */
+  content: "↓"; position: absolute; left: 50%; top: -20px; translate: -50% 0; color: var(--muted); font-size: 0.9rem; line-height: 1;
+}
+.vstep-title { font-weight: 600; font-size: 0.92rem; }
+.vstep-detail { color: var(--muted); font-size: 0.8rem; line-height: 1.4; }

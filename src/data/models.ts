@@ -1,6 +1,6 @@
 import type { AddressPair, Difficulty, ModelPrediction } from "../types";
-import { hash, tokenSet } from "../lib/text";
-import { PAIRS } from "./pairs";
+import { tokenSet } from "../lib/text";
+import { EXPORTED_MODELS, EXPORTED_PROBS, LLM_REASONING, PAIRS } from "./game";
 
 export interface Model {
   id: string;
@@ -48,33 +48,99 @@ function tokenOverlap(pair: AddressPair): ModelPrediction {
   };
 }
 
-/* ---------- Placeholder models: hand-picked misses until real runs exist ---------- */
+/* ---------- Trained models: P(same) precomputed in the Python project (./game.ts) ---------- */
 
-type Explain = (trap: string, saidMatch: boolean, wrong: boolean) => string;
+const SHORT: Record<string, string> = { xgb: "XGBoost", esim: "ESIM", bi: "Bi-encoder", cross: "Cross-encoder", llm: "LLM" };
 
-/**
- * Builds a fake model that gets everything right except the listed pair ids.
- * `threshold` is where its score flips from "different" to "same".
- */
-function placeholder(seed: string, misses: string[], explain: Explain, threshold = 0.5) {
-  const miss = new Set(misses);
-  return (pair: AddressPair): ModelPrediction => {
-    const r = hash(seed + pair.id);
-    const wrong = miss.has(pair.id);
-    const match = wrong ? !pair.isMatch : pair.isMatch;
-    const confidence = wrong ? 0.55 + 0.3 * r : 0.72 + 0.27 * r;
-    // Place the score on the right side of the threshold, further away when more confident.
-    const push = (confidence - 0.5) * 2; // 0..1
-    const score = match ? threshold + (1 - threshold) * push : threshold - threshold * push;
-    return {
-      match,
-      confidence,
-      score,
-      threshold,
-      reason: explain((pair.trap ?? "difference").toLowerCase(), match, wrong),
-    };
+/** A model whose answers come from the exported probabilities. */
+function exported(id: string): (pair: AddressPair) => ModelPrediction {
+  const threshold = EXPORTED_MODELS.find((m) => m.id === id)!.threshold;
+  return (pair) => {
+    const score = EXPORTED_PROBS[id][pair.id];
+    const match = score >= threshold;
+    let reason: string | undefined;
+    if (id === "llm") {
+      // The stored sentence follows the model's YES/NO; put its own answer back in front.
+      const r = (LLM_REASONING[pair.id] ?? "").trim();
+      reason = r ? `"${match ? "Yes" : "No"}, ${r.charAt(0).toLowerCase()}${r.slice(1)}"` : undefined;
+    }
+    return { match, confidence: match ? score : 1 - score, score, threshold, reason };
   };
 }
+
+const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
+  xgb: {
+    blurb: "Gradient-boosted trees over 23 hand-built similarity features.",
+    guide: {
+      how: "Never reads the addresses directly. Each pair becomes 23 similarity scores (Jaro-Winkler, Levenshtein and others on the house number, the street and the ZIP, plus house-number and missing-number flags). 100 small decision trees are added up, each one fixing the previous trees' errors, and a sigmoid turns the sum into P(same).",
+      goodAt: [
+        "House-number mismatches: a different number is a strong feature",
+        "Look-alike streets, when the number and ZIP agree but the street score dips",
+        "Fast and deterministic: one run, no seeds",
+      ],
+      badAt: [
+        "Rewrites no feature captures: a plaza name instead of a street, extra suite or directions text",
+        "Anything where both strings are similar overall but one word decides it",
+      ],
+    },
+  },
+  esim: {
+    blurb: "A word-level cross-attention model (ESIM), reproduced from the address-matching literature.",
+    guide: {
+      how: "Word2vec vectors for each word, a BiLSTM over each address, then soft attention that lines every word of A up with its best match in B. The aligned pairs are compared, pooled and fed to a small classifier. Trained from scratch on Connecticut pairs; the probability shown is the mean of 3 training seeds.",
+      goodAt: [
+        "Lining up the same words in a different order or format",
+        "Different house numbers, including rare ones (each gets its own vector)",
+      ],
+      badAt: [
+        "Look-alike street names: it rejects fewer of them than the cross-encoder",
+        "Typos and words it never saw in training",
+      ],
+    },
+  },
+  bi: {
+    blurb: "Pretrained DistilBERT reads each address on its own; the two vectors are compared.",
+    guide: {
+      how: "A siamese set-up: the same DistilBERT encoder turns each address into one vector (mean of its token vectors), and a small head compares the two vectors. The addresses never see each other inside the encoder. Fine-tuned on Connecticut pairs; mean of 3 seeds.",
+      goodAt: [
+        "Finding true matches written very differently (the highest found rate of all models)",
+        "Abbreviations and formatting, from pretraining",
+      ],
+      badAt: [
+        "Look-alike streets: two similar addresses become two similar vectors, so it says same",
+        "Fine, single-character differences get averaged away",
+      ],
+    },
+  },
+  cross: {
+    blurb: "Pretrained DistilBERT reads both addresses together, attending across them.",
+    guide: {
+      how: "Both addresses go into DistilBERT as one sequence ([CLS] A [SEP] B [SEP]), so attention compares their words directly in every layer. Mean and max pooling over all tokens feed a small classifier. Fine-tuned on Connecticut pairs; mean of 3 seeds.",
+      goodAt: [
+        "Rejecting look-alike streets: it sees both spellings side by side",
+        "Pairs where one side has no house number",
+      ],
+      badAt: [
+        "Strict: it misses more of the real but messy matches than the bi-encoder",
+        "Slow: every pair needs its own forward pass",
+      ],
+    },
+  },
+  llm: {
+    blurb: "A general LLM asked \"same location?\" with no training on this task.",
+    guide: {
+      how: "A general-purpose OpenAI model, prompted with both addresses and asked to answer YES or NO, then give one sentence of reasoning. P(same) comes from the probabilities it put on the YES and NO tokens. No task-specific training. The reasoning is written after the answer, so it's a justification, not how it decided.",
+      goodAt: [
+        "World knowledge: plazas, landmarks, descriptions instead of street addresses",
+        "Explaining itself, sometimes convincingly when it's wrong",
+      ],
+      badAt: [
+        "Can read a one-letter street difference as a typo",
+        "Cost and speed: an API call per pair",
+      ],
+    },
+  },
+};
 
 export const MODELS: Model[] = [
   {
@@ -99,97 +165,44 @@ export const MODELS: Model[] = [
     predict: tokenOverlap,
   },
   {
-    id: "logreg",
-    name: "Logistic regression",
-    short: "Logistic regression",
-    blurb: "A dozen hand-built similarity features, weighted by a model trained on labeled pairs.",
-    placeholder: true,
-    guide: {
-      how: "Turns each pair into a dozen hand-built features (house numbers equal, street-name edit distance, same city, same ZIP, unit present on both sides) and learns a weight for each from labeled pairs. The output is a probability; above 0.5 means same. It's fast and explainable, and it only knows what its features can see.",
-      goodAt: [
-        "Weighting the parts that matter: house number and ZIP count more than filler words",
-        "Different cities or states that share a street name",
-        "Unit and ZIP+4 noise, once those are features",
-      ],
-      badAt: [
-        "Anything no feature captures: grid addresses, ½ and \"bis\" numbers, transposed digits",
-        "Aliases and renames, which look like total mismatches",
-        "Non-Latin scripts, where every string feature reads zero",
-      ],
-    },
-    predict: placeholder(
-      "lr",
-      ["directional-ns", "slc-grid", "fraction", "transposed", "vanity-wtc", "sherlock", "toc-hot-springs",
-        "seoul-cityhall", "salesforce", "tokyo-station", "bis", "ninth"],
-      (t, said, wrong) => {
-        if (!wrong) return said ? "Number, street and city features agree." : `A mismatch feature fired (${t}).`;
-        return said
-          ? `Similarity features all high; nothing flags ${t}.`
-          : "Low string similarity outweighed the matching number.";
-      }
-    ),
+    id: "xgb",
+    name: EXPORTED_MODELS.find((x) => x.id === "xgb")!.name,
+    short: SHORT["xgb"],
+    placeholder: false,
+    ...GUIDES["xgb"],
+    predict: exported("xgb"),
   },
   {
-    id: "transformer",
-    name: "Transformer",
-    short: "Transformer",
-    blurb: "A small pretrained transformer fine-tuned to read both addresses together.",
-    placeholder: true,
-    guide: {
-      how: "A small pretrained transformer fine-tuned as a cross-encoder. Both addresses go in as one sequence, attention lines up tokens across the two, and a classifier on top says same or different. It learns formatting rules from data instead of a hand-written list.",
-      goodAt: [
-        "Translation and reordering: Calle Mayor 10 vs 10 Mayor St",
-        "Directionals and unit numbers, which it learns are decisive",
-        "Formatting it has never seen spelled out in a rule",
-      ],
-      badAt: [
-        "Facts it would have to know: vanity addresses, renamed towns, corner buildings",
-        "Local systems: Salt Lake's grid, Puerto Rico's urbanizaciones, Korea's two address schemes",
-        "Anything rare in its training data",
-      ],
-    },
-    predict: placeholder(
-      "tf",
-      ["vanity-wtc", "slc-grid", "sherlock", "toc-hot-springs", "lake-shore", "urbanizacion", "seoul-cityhall",
-        "salesforce", "bis"],
-      (t, said, wrong) => {
-        if (!wrong) return said ? "Tokens align after attention; same place." : `Attends to a conflicting token (${t}).`;
-        return said
-          ? `High similarity; never learned to weigh ${t}.`
-          : `Surface forms too far apart; no training signal for ${t}.`;
-      }
-    ),
+    id: "esim",
+    name: EXPORTED_MODELS.find((x) => x.id === "esim")!.name,
+    short: SHORT["esim"],
+    placeholder: false,
+    ...GUIDES["esim"],
+    predict: exported("esim"),
+  },
+  {
+    id: "bi",
+    name: EXPORTED_MODELS.find((x) => x.id === "bi")!.name,
+    short: SHORT["bi"],
+    placeholder: false,
+    ...GUIDES["bi"],
+    predict: exported("bi"),
+  },
+  {
+    id: "cross",
+    name: EXPORTED_MODELS.find((x) => x.id === "cross")!.name,
+    short: SHORT["cross"],
+    placeholder: false,
+    ...GUIDES["cross"],
+    predict: exported("cross"),
   },
   {
     id: "llm",
-    name: "LLM (zero-shot)",
-    short: "LLM",
-    blurb: "A general LLM asked \"same address?\" with no training on this task.",
-    placeholder: true,
-    guide: {
-      how: "A general-purpose large language model, prompted with both records and the question \"Do these refer to the same address?\" It's told to answer SAME only when it's at least 80% sure. No task-specific training. It brings world knowledge but no particular care for a single character.",
-      goodAt: [
-        "World knowledge: vanity addresses, renamed towns and streets, famous buildings",
-        "Any language or script",
-        "Explaining itself, sometimes convincingly when it's wrong",
-      ],
-      badAt: [
-        "Being too forgiving: treats a different unit, transposed digits, or a ½ as a typo",
-        "Cost and speed: thousands of times slower per pair than the others",
-        "Consistency: the same pair can get a different answer on a rerun",
-      ],
-    },
-    predict: placeholder(
-      "llm",
-      ["unit-diff", "transposed", "fraction", "bis", "urbanizacion", "esb-zip"],
-      (t, said, wrong) => {
-        if (!wrong) return said ? `"Same place. The ${t} explains the difference."` : `"Different. The ${t} changes the location."`;
-        return said
-          ? `"Probably the same; the ${t} looks like a formatting variation."`
-          : `"These look like different places."`;
-      },
-      0.8 // prompted to answer SAME only when at least 80% sure
-    ),
+    name: EXPORTED_MODELS.find((x) => x.id === "llm")!.name,
+    short: SHORT["llm"],
+    placeholder: false,
+    ...GUIDES["llm"],
+    predict: exported("llm"),
   },
 ];
 

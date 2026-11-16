@@ -1,15 +1,13 @@
 import type { CSSProperties, ReactNode } from "react";
 import { MODELS, PREDICTIONS, type Model } from "./data/models";
-import { crowdFor } from "./data/crowd";
 import type { AddressPair } from "./types";
 
 /*
  * How everyone else answered, as one dense chart. Each model row is a bar:
- *   - the bar is that model's "how same is it" score, 0 → 1 (neutral color)
+ *   - the bar is that model's P(same), 0 → 1, and the number at the end is the same P(same)
  *   - the tick is its threshold: past the tick it says =, short of it ≠
- * Right/wrong is shown only by the green ✓ / red ✗ at the start of the row, so
- * green and red never mean anything but right and wrong. Players is just a
- * "% right" figure. Numbers live in a hover tooltip; only the LLM gets a line of text.
+ * Bar, dot and the ✓ / ✗ are green when the model got the pair right, red when wrong,
+ * so green and red never mean anything but right and wrong. Only the LLM gets a line of text.
  */
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -24,8 +22,6 @@ interface Row {
   right: boolean;
   /** Text at the end of the row. */
   value: ReactNode;
-  /** Players: just the figure, no bar. */
-  noTrack?: boolean;
   tip: ReactNode;
   quote?: string;
 }
@@ -37,8 +33,8 @@ function logit(p: number) {
 
 function modelRow(m: Model, pair: AddressPair, opponentId?: string): Row {
   const p = PREDICTIONS[m.id][pair.id];
-  // Shown inline: how confident it is in the answer it gave.
-  const num = pct(p.confidence);
+  // Shown inline: P(same), the same number the bar shows.
+  const num = pct(p.score);
   let tip: ReactNode;
   if (m.id === "token-overlap") {
     tip = p.reason;
@@ -76,28 +72,9 @@ function modelRow(m: Model, pair: AddressPair, opponentId?: string): Row {
 }
 
 export function AnswerChart({ pair, opponent }: { pair: AddressPair; opponent?: Model }) {
-  const crowd = crowdFor(pair);
-  const sameShare = crowd.same / crowd.total;
   const models = opponent ? [opponent, ...MODELS.filter((m) => m.id !== opponent.id)] : MODELS;
 
-  const rows: Row[] = [
-    {
-      id: "players",
-      name: "Players",
-      score: sameShare,
-      threshold: 0.5,
-      saidSame: sameShare >= 0.5,
-      right: crowd.majorityRight,
-      value: `${pct(crowd.rightShare)} right`,
-      noTrack: true,
-      tip: (
-        <>
-          <b>{crowd.total.toLocaleString()}</b> votes · {pct(sameShare)} said = · {pct(1 - sameShare)} said ≠
-        </>
-      ),
-    },
-    ...models.map((m) => modelRow(m, pair, opponent?.id)),
-  ];
+  const rows: Row[] = models.map((m) => modelRow(m, pair, opponent?.id));
 
   return (
     <div className="answer-chart" aria-label="How others answered">
@@ -111,15 +88,11 @@ export function AnswerChart({ pair, opponent }: { pair: AddressPair; opponent?: 
             <span className="ac-name" title={r.opponent ? `${r.name} (your opponent)` : r.name}>
               {r.name}
             </span>
-            {r.noTrack ? (
-              <span />
-            ) : (
-              <span className="ac-track" style={style}>
-                <span className="ac-bar" />
-                <span className="ac-thr" />
-                <span className="ac-dot" />
-              </span>
-            )}
+            <span className="ac-track" style={style}>
+              <span className="ac-bar" />
+              <span className="ac-thr" />
+              <span className="ac-dot" />
+            </span>
             <span className="ac-val">{r.value}</span>
             {r.quote && <span className="ac-quote">{r.quote}</span>}
             <span className="ac-tip" role="tooltip">
@@ -130,7 +103,7 @@ export function AnswerChart({ pair, opponent }: { pair: AddressPair; opponent?: 
       })}
       <div className="ac-legend" aria-hidden>
         <span>
-          <i className="lg-bar" /> how sure it's the same
+          <i className="lg-bar" /> P(same): green = model right, red = wrong
         </span>
         <span>
           <i className="lg-thr" /> its threshold: past it means =, short of it ≠

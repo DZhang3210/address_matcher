@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { PAIRS } from "./data/pairs";
+import { DEMO_PAIRS } from "./data/pairs";
 import { normTokens, tokenSet } from "./lib/text";
 import type { AddressPair, AddressRecord } from "./types";
 
@@ -56,7 +56,7 @@ export function Demo() {
   const [phase, setPhase] = useState<Phase>("hidden");
 
   const { id, guess } = SCRIPT[step];
-  const pair = PAIRS.find((p) => p.id === id)!;
+  const pair = DEMO_PAIRS.find((p) => p.id === id)!;
   const rowA = useMemo(() => tiles(pair.a, pair.b), [pair]);
   const rowB = useMemo(() => tiles(pair.b, pair.a), [pair]);
   const right = guess === pair.isMatch;

@@ -137,7 +137,9 @@ kbd {
 .pick-label { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75; margin-top: 2px; }
 /* Answers are neutral: green/red are reserved for right/wrong. */
 .pick { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 35%, var(--line)); }
-.pick:not(:disabled):hover { transform: scale(1.06); background: var(--ink); color: var(--surface); border-color: var(--ink); }
+@media (hover: hover) { /* touch screens keep :hover after a tap, which looked like a selection */
+  .pick:not(:disabled):hover { transform: scale(1.06); background: var(--ink); color: var(--surface); border-color: var(--ink); }
+}
 .pick:not(:disabled):active { transform: scale(0.96); }
 .pick:disabled { cursor: default; }
 .hint { text-align: center; color: var(--muted); font-size: 0.82rem; margin-top: 16px; }
@@ -241,7 +243,7 @@ kbd {
 }
 
 /* Tabs */
-.topbar { flex-direction: column; align-items: stretch; gap: 12px; }
+.topbar { flex-direction: column; align-items: stretch; gap: 12px; flex-wrap: nowrap; } /* wrap would let the tab row grow to its full width instead of scrolling */
 .tabs {
   display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
   border-bottom: 1px solid var(--line); margin: 0 -16px; padding: 0 16px;
@@ -269,7 +271,32 @@ kbd {
   padding: 10px 18px; font-weight: 600; font-size: 0.95rem;
 }
 .ghost:hover { border-color: var(--ink); }
-.reveal-actions { margin-top: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+/* end free play: red, and asks before it ends */
+.danger {
+  border: 1.5px solid var(--bad); color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent);
+  border-radius: 12px; padding: 10px 18px; font-weight: 600; font-size: 0.95rem; cursor: pointer;
+}
+.danger:hover { background: color-mix(in srgb, var(--bad) 20%, transparent); }
+.danger kbd { border-color: currentColor; color: inherit; }
+.danger.solid { background: var(--bad); color: #fff; border-color: var(--bad); }
+.danger.solid:hover { background: color-mix(in srgb, var(--bad) 85%, #000); }
+
+/* floating "End the game?" dialog over the whole page */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, #000 55%, transparent); backdrop-filter: blur(3px);
+  animation: fade-in 0.12s ease-out;
+}
+.modal {
+  width: min(420px, 100%); background: var(--surface); color: var(--ink);
+  border: 1.5px solid var(--bad); border-radius: 16px; padding: 22px 22px 18px; box-shadow: var(--shadow);
+  animation: pop 0.16s ease-out;
+}
+.modal h2 { margin: 0 0 6px; font-size: 1.2rem; }
+.modal p { margin: 0 0 18px; color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.reveal-actions { margin-top: auto; padding-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
 .reveal-actions .next { margin-top: 0; }
 .pick.chosen { outline: 3px solid var(--accent); outline-offset: 3px; color: var(--accent); border-color: var(--accent); }
 
@@ -300,13 +327,7 @@ mark.diffword {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent), var(--shadow);
 }
 
-@media (max-width: 640px) {
-  /* Stacked layout: the buttons would sit over the cards, so float them at the bottom instead. */
-  .reveal.peeking .reveal-actions {
-    position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 10; justify-content: center;
-    background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; box-shadow: var(--shadow);
-  }
-}
+
 
 /* Players row + opponent highlight */
 .board-row.opp .board-name { color: var(--accent); }
@@ -342,3 +363,102 @@ mark.diffword {
   .ma-cols { grid-template-columns: 1fr; }
   .versus-score { width: 100%; }
 }
+
+/* Touch screens: no keyboard, so no key hints */
+@media (hover: none) and (pointer: coarse) {
+  kbd, .hint, .keys { display: none; }
+}
+
+
+
+/* ================================ Phones ================================ */
+
+.tabs-compact { display: none; }
+.lbl-short { display: none; }
+
+@media (max-width: 640px) {
+  /* The page never drags sideways. */
+  html, body { overflow-x: clip; overscroll-behavior-x: none; }
+  body { touch-action: pan-y pinch-zoom; }
+
+  /* Light motion only: short fades and slides, no blur, shake or wobble. */
+  /* "main." prefixes: these must beat motion.css, which loads after this file */
+  main.play .cards > .card:first-child, main.play .cards > .card:last-child { animation: fade-up 0.22s ease-out both; }
+  main.play .cards > .divider { animation: none; } /* the bottom bar stays put */
+  main.intro.leaving, main.results.leaving { animation: fade-out 0.18s ease-in forwards; }
+  .demo.bad .demo-card.left, .demo.bad .demo-card.right { animation: none; }
+  .demo .demo-card { filter: none !important; }
+
+  /* Tabs: row 1 = Free play · The models, row 2 = Beat <every model>, all visible, wrapping. */
+  .tabs:not(.tabs-compact) { display: none; }
+  .tabs-compact { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+  .tc-row { display: flex; gap: 4px; }
+  .tc-row .tab { flex: 1; padding: 6px 8px 8px; }
+  .tc-beat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .tc-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 2px; }
+  .chip {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px;
+    padding: 5px 11px; font-size: 0.82rem; font-weight: 600;
+  }
+  .chip.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+
+  /* Play: the two addresses sit right on top of each other; every button lives in one bottom bar. */
+  .play { padding-bottom: 96px; }
+  .cards { gap: 10px; }
+  .play .divider,
+  .reveal .reveal-actions {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; margin: 0;
+    display: flex; flex-direction: row; gap: 8px; justify-content: stretch;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: var(--bg); border-top: 1px solid var(--line); pointer-events: auto;
+  }
+  .play .divider { order: 3; }
+  .play.answered .divider { display: none; } /* after answering, the bar holds Next / Show / End instead */
+  .play .pick { flex: 1; width: auto; height: 52px; flex-direction: row; gap: 8px; border-radius: 12px; }
+  .play .pick .sym { font-size: 1.5rem; }
+  .play .pick-label { font-size: 0.8rem; margin-top: 0; opacity: 1; }
+  .reveal .reveal-actions > button { flex: 1; padding: 12px 8px; font-size: 0.92rem; }
+  .lbl-long { display: none; }
+  .lbl-short { display: inline; }
+
+  /* The result is a sheet that slides up over the screen (question, badge, cards) instead of pushing it down.
+     It sits on top of the bottom bar's row and scrolls on its own if it's taller than the screen.
+     No transform / filter on it, so the fixed button bar inside it stays pinned to the screen. */
+  .reveal {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+    max-height: 82dvh; overflow-y: auto; overscroll-behavior: contain;
+    padding: 18px 18px calc(84px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0; border-bottom: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--surface);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+    animation: sheet-up 0.24s cubic-bezier(.2, .9, .3, 1) both;
+  }
+  .reveal.is-bad { animation: sheet-up 0.24s cubic-bezier(.2, .9, .3, 1) both; } /* no shake */
+  .reveal.peeking { box-shadow: none; overflow: hidden; } /* Show pair: the sheet's content fades out, the pair shows through */
+}
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes sheet-up { from { opacity: 0.4; bottom: -120px; } to { opacity: 1; bottom: 0; } }
+
+/* Switching tabs (Free play, Beat X, The models): the new page fades and rises in. */
+/* No transform here: a transformed parent would carry the phone's fixed bottom bar along with it. */
+.page-in { position: relative; animation: page-in 0.28s cubic-bezier(.2, .8, .3, 1) both; }
+@keyframes page-in { from { opacity: 0; top: 10px; } to { opacity: 1; top: 0; } }
+.tab, .chip { transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease; }
+@media (prefers-reduced-motion: reduce) { .page-in { animation: none; } }
+
+/* Top-right Share button + QR dialog */
+.topbar-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.share-btn {
+  display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--ink); border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 0.88rem;
+}
+.share-btn:hover { border-color: var(--ink); }
+.share-modal { border-color: var(--line); text-align: center; width: min(360px, 100%); }
+.share-modal p { margin-bottom: 12px; }
+.qr { background: #fff; border-radius: 12px; padding: 10px; width: min(240px, 70vw); margin: 0 auto 12px; line-height: 0; }
+.qr svg { width: 100%; height: auto; display: block; }
+.share-url { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.8rem; color: var(--muted); word-break: break-all; margin-bottom: 10px; user-select: all; }
+.share-note { font-size: 0.8rem !important; color: var(--medium) !important; }
+.share-modal .modal-actions { justify-content: center; }
+.share-modal .next { margin-top: 0; }

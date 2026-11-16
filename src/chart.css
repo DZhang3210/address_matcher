@@ -25,7 +25,7 @@
 .ac-num { color: var(--ink); font-variant-numeric: tabular-nums; display: inline-block; min-width: 3.6em; text-align: right; }
 .ac-val { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.76rem; color: var(--muted); text-align: right; white-space: nowrap; }
 
-/* the track: score bar from 0 and a threshold tick. Neutral colors only. */
+/* the track: P(same) bar from 0 and a threshold tick. Bar + dot take the row's right/wrong color. */
 .ac-track { position: relative; height: 16px; border-radius: 4px; background: color-mix(in srgb, var(--muted) 12%, transparent); }
 .ac-bar {
   position: absolute; left: 0; top: 5px; height: 6px; width: var(--s); border-radius: 3px;
@@ -36,7 +36,10 @@
   position: absolute; left: var(--s); top: 50%; width: 11px; height: 11px; border-radius: 50%;
   translate: -50% -50%; border: 2px solid var(--surface);
 }
-.ac-dot { background: var(--ink); } /* neutral: the bar is the answer, not the grade */
+.ac-row.ok .ac-bar { background: color-mix(in srgb, var(--ok) 55%, transparent); }
+.ac-row.bad .ac-bar { background: color-mix(in srgb, var(--bad) 55%, transparent); }
+.ac-row.ok .ac-dot { background: var(--ok); }
+.ac-row.bad .ac-dot { background: var(--bad); }
 
 .ac-legend {
   display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; padding-left: 24px;
@@ -44,7 +47,7 @@
 }
 .ac-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .ac-legend i { display: inline-block; }
-.lg-bar { width: 16px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 55%, transparent); }
+.lg-bar { width: 16px; height: 5px; border-radius: 3px; background: linear-gradient(90deg, var(--ok) 50%, var(--bad) 50%); }
 .lg-thr { width: 2px; height: 11px; background: var(--ink); }
 
 /* the LLM's one line of reasoning */
@@ -64,6 +67,8 @@
 
 @media (max-width: 640px) {
   .answer-chart { padding: 14px 0 0; border-left: none; border-top: 1px solid var(--line); }
-  .ac-row { grid-template-columns: 14px minmax(0, 7rem) minmax(60px, 1fr) 5.2rem; column-gap: 8px; }
+  .ac-row { grid-template-columns: 14px minmax(0, 7.4rem) minmax(80px, 1fr) 2.8rem; column-gap: 8px; }
+  .ac-val .ans { display: none; } /* the bar + tick already say = or ≠; give the bar the room */
+  .ac-num { min-width: 0; }
   .ac-tip { white-space: normal; max-width: 260px; }
 }

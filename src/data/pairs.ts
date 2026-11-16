@@ -1,7 +1,8 @@
 import type { AddressPair } from "../types";
 
-// Hand-written dummy data. Swap this out for real Overture vs Foursquare candidates later.
-export const PAIRS: AddressPair[] = [
+// Hand-written example pairs, used only by the how-to-play demo and the token-overlap figure.
+// The game itself plays the real test pairs in ./game.ts.
+export const DEMO_PAIRS: AddressPair[] = [
   {
     id: "abbrev-loop",
     a: { lines: ["1 Infinite Loop", "Cupertino, CA 95014"] },
