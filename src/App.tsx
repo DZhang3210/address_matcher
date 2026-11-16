@@ -52,6 +52,20 @@ function save(key: string, value: string) {
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
+/** True on phone-width screens (matches the CSS breakpoint), kept up to date on resize/rotate. */
+const PHONE_QUERY = "(max-width: 640px)";
+function useIsPhone(): boolean {
+  const [isPhone, setIsPhone] = useState(() => window.matchMedia?.(PHONE_QUERY).matches ?? false);
+  useEffect(() => {
+    const mq = window.matchMedia?.(PHONE_QUERY);
+    if (!mq) return;
+    const on = () => setIsPhone(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return isPhone;
+}
+
 /**
  * Free play: endless, the whole pool shuffled (another shuffle is appended when it runs out).
  * Versus a model: ROUND_SIZE pairs, OPPONENT_MISSES it gets wrong + the rest random, shuffled together.
@@ -250,7 +264,7 @@ function Game({ opponent }: { opponent?: Model }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const k = e.key.toLowerCase();
+      const k = (e.key ?? "").toLowerCase(); // some phone keyboards send events with no key name
       // Stop Enter/Space from also "clicking" a focused button, which would double-advance.
       if (k === "enter" || k === " ") e.preventDefault();
       if (phase !== "playing") {
@@ -423,6 +437,23 @@ function Reveal({
   isLast: boolean;
 }) {
   const { pair, guess, correct, points } = answer;
+  const isPhone = useIsPhone();
+  const actions = (
+    <div className="reveal-actions">
+      <button className="next" onClick={onNext} autoFocus={!isPhone}>
+        {isLast ? "See results" : "Next pair"} <kbd>Enter</kbd>
+      </button>
+      <button className="ghost" onClick={onPeek} aria-pressed={peek}>
+        {peek ? "Show result" : "Show pair"} <kbd>S</kbd>
+      </button>
+      {onEnd && (
+        <button className="danger" onClick={onEnd}>
+          <span className="lbl-long">End &amp; see results</span>
+          <span className="lbl-short">End</span> <kbd>E</kbd>
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -449,20 +480,9 @@ function Reveal({
           <strong>{pair.isMatch ? "the same" : "different"}</strong>.
         </p>
         {pair.trap && <div className="trap">{pair.trap}</div>}
-        <div className="reveal-actions">
-          <button className="next" onClick={onNext} autoFocus>
-            {isLast ? "See results" : "Next pair"} <kbd>Enter</kbd>
-          </button>
-          <button className="ghost" onClick={onPeek} aria-pressed={peek}>
-            {peek ? "Show result" : "Show pair"} <kbd>S</kbd>
-          </button>
-          {onEnd && (
-            <button className="danger" onClick={onEnd}>
-              <span className="lbl-long">End &amp; see results</span>
-              <span className="lbl-short">End</span> <kbd>E</kbd>
-            </button>
-          )}
-        </div>
+        {/* On phones the buttons render straight into <body> as the fixed bottom bar: a fixed bar
+            nested inside the scrolling result sheet misbehaved on real phones when Show pair hid the sheet. */}
+        {isPhone ? createPortal(<div className="phone-bar">{actions}</div>, document.body) : actions}
       </div>
 
       <AnswerChart pair={pair} opponent={opponent} />

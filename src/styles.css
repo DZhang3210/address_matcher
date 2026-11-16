@@ -406,7 +406,7 @@ mark.diffword {
   .play { padding-bottom: 96px; }
   .cards { gap: 10px; }
   .play .divider,
-  .reveal .reveal-actions {
+  .phone-bar .reveal-actions {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; margin: 0;
     display: flex; flex-direction: row; gap: 8px; justify-content: stretch;
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
@@ -417,7 +417,7 @@ mark.diffword {
   .play .pick { flex: 1; width: auto; height: 52px; flex-direction: row; gap: 8px; border-radius: 12px; }
   .play .pick .sym { font-size: 1.5rem; }
   .play .pick-label { font-size: 0.8rem; margin-top: 0; opacity: 1; }
-  .reveal .reveal-actions > button { flex: 1; padding: 12px 8px; font-size: 0.92rem; }
+  .phone-bar .reveal-actions > button { flex: 1; padding: 12px 8px; font-size: 0.92rem; }
   .lbl-long { display: none; }
   .lbl-short { display: inline; }
 
@@ -434,7 +434,7 @@ mark.diffword {
     animation: sheet-up 0.24s cubic-bezier(.2, .9, .3, 1) both;
   }
   .reveal.is-bad { animation: sheet-up 0.24s cubic-bezier(.2, .9, .3, 1) both; } /* no shake */
-  .reveal.peeking { box-shadow: none; overflow: hidden; } /* Show pair: the sheet's content fades out, the pair shows through */
+  .reveal.peeking { visibility: hidden; } /* Show pair: the whole sheet steps aside; the bar (outside it) stays */
 }
 @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } }
 @keyframes fade-out { to { opacity: 0; } }
@@ -462,3 +462,10 @@ mark.diffword {
 .share-note { font-size: 0.8rem !important; color: var(--medium) !important; }
 .share-modal .modal-actions { justify-content: center; }
 .share-modal .next { margin-top: 0; }
+
+/* Crash screen (ErrorBoundary) */
+.crash { max-width: 520px; margin: 0 auto; padding: 64px 16px; text-align: center; }
+.crash h1 { margin: 0 0 8px; }
+.crash p { color: var(--muted); margin: 0 0 20px; }
+.crash details { margin-top: 24px; text-align: left; color: var(--muted); font-size: 0.8rem; }
+.crash pre { white-space: pre-wrap; word-break: break-word; }
