@@ -656,8 +656,7 @@ function Intro({
               const n = poolFor(difficulty, m).length;
               return (
                 <option key={m.id} value={m.id} disabled={n === 0}>
-                  {m.name}
-                  {difficulty !== "any" && ` (${n.toLocaleString()} ${difficulty})`}
+                  {m.short}
                 </option>
               );
             })}

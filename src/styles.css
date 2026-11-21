@@ -88,6 +88,12 @@ kbd {
   background: var(--surface); color: var(--ink); font: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer;
 }
 .pool-note { color: var(--muted); font-size: 0.85rem; margin: 0 0 24px; }
+@media (max-width: 640px) {
+  /* Phones: the two pickers side by side, half the width each. */
+  .pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pickers label { min-width: 0; }
+  .pickers select { min-width: 0; width: 100%; padding: 8px 22px 8px 8px; font-size: 0.8rem; text-overflow: ellipsis; }
+}
 .start:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .keys kbd { margin: 0 2px; }
 
