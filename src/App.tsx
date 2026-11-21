@@ -71,15 +71,33 @@ function useIsPhone(): boolean {
 }
 
 /**
- * The pairs a round can draw from: the chosen difficulty ("any" = all), and with an opponent only the pairs it gets wrong.
- * No opponent: endless, the pool shuffled (another shuffle is appended when it runs out).
- * Versus a model: ROUND_SIZE pairs from its misses (fewer if the pool is smaller).
+ * Difficulty of a pair.
+ * Against everyone: the pair's own level (how many of the 6 exported models miss it; same as The models page).
+ * Against one model: that model's confidence in the right answer: sure and right (>= SURE) easy,
+ * right but unsure medium, wrong hard. For the exported models the confidence is P(right answer).
  */
+const SURE = 0.9;
+function difficultyFor(pair: AddressPair, opponent?: Model): Difficulty {
+  if (!opponent) return pair.difficulty;
+  const p = PREDICTIONS[opponent.id][pair.id];
+  if (p.match !== pair.isMatch) return "hard";
+  return p.confidence >= SURE ? "easy" : "medium";
+}
+
+/**
+ * The pairs a round can draw from: the chosen difficulty ("any" = all), judged against the opponent if there is one.
+ * No opponent: endless, the pool shuffled (another shuffle is appended when it runs out).
+ * Versus a model: ROUND_SIZE pairs from the pool (fewer if the pool is smaller).
+ */
+const OPPONENT_ROUND: Record<DiffChoice, string> = {
+  any: "This round mixes pairs it gets right and wrong.",
+  easy: "Every pair in this round is one it gets right, and is sure about.",
+  medium: "Every pair in this round is one it gets right, but without much confidence.",
+  hard: "Every pair in this round is one it gets wrong.",
+};
 const PROGRESS_WINDOW = 10; // dots shown in endless mode: the latest answers + the current pair
 function poolFor(difficulty: DiffChoice, opponent?: Model): AddressPair[] {
-  return PAIRS.filter(
-    (p) => (difficulty === "any" || p.difficulty === difficulty) && (!opponent || !isRight(opponent.id, p))
-  );
+  return PAIRS.filter((p) => difficulty === "any" || difficultyFor(p, opponent) === difficulty);
 }
 function dealRound(difficulty: DiffChoice, opponent?: Model): AddressPair[] {
   const pool = shuffle(poolFor(difficulty, opponent));
@@ -124,6 +142,8 @@ export default function App() {
     save(DIFF_KEY, d);
   };
   const opponent = opponentId ? MODEL_BY_ID[opponentId] : undefined;
+  // Everyone: one option, all pairs. One model: easy / medium / hard by its own confidence (Hard if nothing was picked yet).
+  const roundDifficulty: DiffChoice = opponent ? (difficulty === "any" ? "hard" : difficulty) : "any";
 
   // On a narrow screen the tab row scrolls sideways: keep the active tab in view.
   useEffect(() => {
@@ -185,9 +205,9 @@ export default function App() {
           />
         ) : (
           <Game
-            key={`${tab}:${visit}:${opponentId}:${difficulty}`}
+            key={`${tab}:${visit}:${opponentId}:${roundDifficulty}`}
             opponent={opponent}
-            difficulty={difficulty}
+            difficulty={roundDifficulty}
             onOpponent={chooseOpponent}
             onDifficulty={chooseDifficulty}
           />
@@ -260,12 +280,12 @@ function Game({
       if (!current || revealed) return;
       const correct = guess === current.isMatch;
       const newStreak = correct ? streak + 1 : 0;
-      const points = correct ? POINTS[current.difficulty] + STREAK_BONUS * (newStreak - 1) : 0;
+      const points = correct ? POINTS[difficultyFor(current, opponent)] + STREAK_BONUS * (newStreak - 1) : 0;
       setStreak(newStreak);
       setBestStreak((b) => Math.max(b, newStreak));
       setAnswers((as) => [...as, { pair: current, guess, correct, points }]);
     },
-    [current, revealed, streak]
+    [current, revealed, streak, opponent]
   );
 
   const finish = useCallback(() => {
@@ -386,7 +406,7 @@ function Game({
         <span>
           Do these two records point to the <em>same address</em>?
         </span>
-        <span className={`diff diff-${current.difficulty}`}>{current.difficulty}</span>
+        <span className={`diff diff-${difficultyFor(current, opponent)}`}>{difficultyFor(current, opponent)}</span>
       </p>
 
       <div className="stage">
@@ -586,8 +606,8 @@ function Intro({
             Beat the <span className="hl">{opponent.short}</span>.
           </h1>
           <p className="lede">
-            {opponent.blurb} It gets <strong>{pct(accuracy(opponent.id))}</strong> of all pairs right, but every pair in
-            this round is one it gets wrong. Can you beat it?
+            {opponent.blurb} It gets <strong>{pct(accuracy(opponent.id))}</strong> of all pairs right.{" "}
+            {OPPONENT_ROUND[difficulty]} Can you beat it?
             {opponent.placeholder && <span className="lede-note"> (Its answers are placeholders for now.)</span>}
           </p>
         </>
@@ -612,12 +632,17 @@ function Intro({
       <div className="pickers">
         <label>
           <span className="picker-label">Difficulty</span>
-          <select value={difficulty} onChange={(e) => onDifficulty(e.target.value as DiffChoice)}>
-            {(["any", ...DIFFICULTIES] as DiffChoice[]).map((d) => {
+          <select
+            value={difficulty}
+            onChange={(e) => onDifficulty(e.target.value as DiffChoice)}
+            disabled={!opponent}
+            title={opponent ? undefined : "Pick an opponent to choose a difficulty"}
+          >
+            {((opponent ? DIFFICULTIES : ["any"]) as DiffChoice[]).map((d) => {
               const n = poolFor(d, opponent).length;
               return (
                 <option key={d} value={d} disabled={n === 0}>
-                  {d === "any" ? "Any" : d[0].toUpperCase() + d.slice(1)} ({n.toLocaleString()})
+                  {d === "any" ? "All pairs" : d[0].toUpperCase() + d.slice(1)} ({n.toLocaleString()})
                 </option>
               );
             })}
@@ -631,7 +656,8 @@ function Intro({
               const n = poolFor(difficulty, m).length;
               return (
                 <option key={m.id} value={m.id} disabled={n === 0}>
-                  {m.name} ({n.toLocaleString()} misses)
+                  {m.name}
+                  {difficulty !== "any" && ` (${n.toLocaleString()} ${difficulty})`}
                 </option>
               );
             })}
@@ -642,7 +668,7 @@ function Intro({
         {poolSize === 0
           ? "No pairs fit this combination."
           : opponent
-            ? `${roundSize} of its ${poolSize.toLocaleString()} misses${difficulty === "any" ? "" : ` at ${difficulty}`}, at random.`
+            ? `${roundSize} of ${poolSize.toLocaleString()} pairs, at random. Difficulty is judged by the ${opponent.short}'s own confidence.`
             : `${poolSize.toLocaleString()} pairs, endless.`}
       </p>
       <button className={"start" + (leaving ? " pressed" : "")} onClick={onStart} disabled={poolSize === 0}>
