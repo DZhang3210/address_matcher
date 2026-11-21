@@ -50,7 +50,7 @@ function tokenOverlap(pair: AddressPair): ModelPrediction {
 
 /* ---------- Trained models: P(same) precomputed in the Python project (./game.ts) ---------- */
 
-const SHORT: Record<string, string> = { xgb: "XGBoost", esim: "ESIM", bi: "Bi-encoder", cross: "Cross-encoder", llm: "LLM" };
+const SHORT: Record<string, string> = { xgb: "XGBoost", siamese: "Siamese", esim: "ESIM", bi: "Bi-encoder", cross: "Cross-encoder", llm: "LLM" };
 
 /** A model whose answers come from the exported probabilities. */
 function exported(id: string): (pair: AddressPair) => ModelPrediction {
@@ -84,17 +84,31 @@ const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
       ],
     },
   },
-  esim: {
-    blurb: "A word-level cross-attention model (ESIM), reproduced from the address-matching literature.",
+  siamese: {
+    blurb: "A character-level BiLSTM reads each address on its own; the two vectors are compared.",
     guide: {
-      how: "Word2vec vectors for each word, a BiLSTM over each address, then soft attention that lines every word of A up with its best match in B. The aligned pairs are compared, pooled and fed to a small classifier. Trained from scratch on Connecticut pairs; the probability shown is the mean of 3 training seeds.",
+      how: "Reads each address one character at a time: every character gets a small learned vector, a BiLSTM reads the sequence in both directions, and the mean over all characters becomes one vector per address. The same encoder handles both addresses, and a small head compares the two vectors. Trained from scratch on Connecticut pairs; mean of 3 seeds.",
+      goodAt: [
+        "Typos and abbreviations: it reads characters, so no word is ever unknown",
+        "Different house numbers",
+      ],
+      badAt: [
+        "Look-alike streets: like the bi-encoder, two similar strings become two similar vectors",
+        "Small model, no pretraining: it knows only what the training pairs showed it",
+      ],
+    },
+  },
+  esim: {
+    blurb: "A word-level cross-attention model (ESIM) on fastText vectors, reproduced from the address-matching literature.",
+    guide: {
+      how: "FastText vectors for each word (built from character n-grams, so every word gets one), a BiLSTM over each address, then soft attention that lines every word of A up with its best match in B. The aligned pairs are compared, pooled and fed to a small classifier. Trained from scratch on Connecticut pairs; the probability shown is the mean of 3 training seeds.",
       goodAt: [
         "Lining up the same words in a different order or format",
-        "Different house numbers, including rare ones (each gets its own vector)",
+        "Typos and rare words: fastText builds their vectors from pieces of the word",
       ],
       badAt: [
         "Look-alike street names: it rejects fewer of them than the cross-encoder",
-        "Typos and words it never saw in training",
+        "Different house numbers: it lets through slightly more than the other trained models",
       ],
     },
   },
@@ -171,6 +185,14 @@ export const MODELS: Model[] = [
     placeholder: false,
     ...GUIDES["xgb"],
     predict: exported("xgb"),
+  },
+  {
+    id: "siamese",
+    name: EXPORTED_MODELS.find((x) => x.id === "siamese")!.name,
+    short: SHORT["siamese"],
+    placeholder: false,
+    ...GUIDES["siamese"],
+    predict: exported("siamese"),
   },
   {
     id: "esim",

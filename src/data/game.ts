@@ -2,7 +2,7 @@ import type { AddressPair, Difficulty } from "../types";
 import data from "./game_pairs.json";
 
 /*
- * The real game data: Connecticut test pairs (Overture × Foursquare, case2s dataset) with every
+ * The real game data: Connecticut validation + test pairs (Overture × Foursquare, case2s dataset) with every
  * trained model's P(same), exported by ml-geocoding/geocoding_ml/address_matcher/build_address_matcher_dataset.ipynb.
  * To refresh: re-run that notebook and copy its game_pairs.json over ./game_pairs.json.
  *
@@ -21,6 +21,7 @@ export interface ExportedPair {
   address_b: string;
   label: number;
   neg_type: string;
+  split: string; // "val" | "test"
   probs: Record<string, number>;
   llm_reasoning: string;
 }
@@ -41,11 +42,11 @@ const TRAP: Record<string, string | undefined> = {
   case2: "Different street, same number",
 };
 
-/** Difficulty = how many of the exported models get the pair wrong (0 easy · 1–2 medium · 3–4 hard · all absurd). */
+/** Difficulty = how many of the exported models (6: XGBoost, siamese, ESIM, bi, cross, LLM) get the pair wrong
+ *  (0 easy · 1–2 medium · 3–6 hard). "All 6 wrong" was its own level until it proved too small (23 pairs). */
 function difficulty(p: ExportedPair): Difficulty {
   const wrong = EXPORTED_MODELS.filter((m) => (p.probs[m.id] >= m.threshold) !== (p.label === 1)).length;
   if (wrong === 0) return "easy";
-  if (wrong === EXPORTED_MODELS.length) return "absurd";
   return wrong <= 2 ? "medium" : "hard";
 }
 

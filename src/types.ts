@@ -1,4 +1,4 @@
-export type Difficulty = "easy" | "medium" | "hard" | "absurd";
+export type Difficulty = "easy" | "medium" | "hard";
 
 /** One side of a comparison. Shaped so real Overture / Foursquare rows can map onto it later. */
 export interface AddressRecord {

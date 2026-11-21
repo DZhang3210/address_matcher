@@ -31,9 +31,17 @@ const FIGURES: Record<string, { n: number; caption: string; refs: Ref[]; svg: ()
     ],
     svg: () => <TreesFigure />,
   },
-  esim: {
+  siamese: {
     n: 3,
-    caption: "ESIM: frozen word2vec vectors (rare tokens get their own fixed random row) → BiLSTM → soft alignment between A and B → comparison → BiLSTM → mean + max pooling → MLP.",
+    caption: "Siamese BiLSTM: one character-level encoder (32-d character vectors → BiLSTM 128 per direction → masked mean pool) reads each address on its own; the two vectors meet only in the head.",
+    refs: [
+      { label: "Reimers & Gurevych, Sentence-BERT (2019)", href: "https://arxiv.org/abs/1908.10084" },
+    ],
+    svg: () => <SiameseFigure />,
+  },
+  esim: {
+    n: 4,
+    caption: "ESIM: frozen fastText vectors (built from character n-grams, so every word has one) → BiLSTM → soft alignment between A and B → comparison → BiLSTM → mean + max pooling → MLP.",
     refs: [
       { label: "Chen et al., Enhanced LSTM for Natural Language Inference (2017)", href: "https://arxiv.org/abs/1609.06038" },
       { label: "Lin et al., deep semantic address matching (2020)", href: "https://doi.org/10.1080/13658816.2019.1681431" },
@@ -41,7 +49,7 @@ const FIGURES: Record<string, { n: number; caption: string; refs: Ref[]; svg: ()
     svg: () => <EsimFigure />,
   },
   bi: {
-    n: 4,
+    n: 5,
     caption: "Bi-encoder: one DistilBERT encodes each address on its own; the two mean-pooled vectors meet only in the head.",
     refs: [
       { label: "Reimers & Gurevych, Sentence-BERT (2019)", href: "https://arxiv.org/abs/1908.10084" },
@@ -50,7 +58,7 @@ const FIGURES: Record<string, { n: number; caption: string; refs: Ref[]; svg: ()
     svg: () => <BiEncoderFigure />,
   },
   cross: {
-    n: 5,
+    n: 6,
     caption: "Cross-encoder: both addresses in one DistilBERT input, so every layer attends across them; mean + max pooling → MLP.",
     refs: [
       { label: "Devlin et al., BERT (2019)", href: "https://arxiv.org/abs/1810.04805" },
@@ -59,7 +67,7 @@ const FIGURES: Record<string, { n: number; caption: string; refs: Ref[]; svg: ()
     svg: () => <CrossEncoderFigure />,
   },
   llm: {
-    n: 6,
+    n: 7,
     caption: "Zero-shot gpt-4o-mini: P(same) from the probabilities of its first token (YES vs NO); the sentence after it is the reasoning shown in the game.",
     refs: [
       { label: "Narayan et al., Can Foundation Models Wrangle Your Data? (2022)", href: "https://arxiv.org/abs/2205.09911" },
@@ -90,9 +98,17 @@ const FLOWS: Record<string, FlowStep[]> = {
     { title: "logit = tree 1 + tree 2 + … + tree 100" },
     { title: "σ(logit) → P(same)", detail: "same if ≥ 0.5" },
   ],
+  siamese: [
+    { title: "A and B, as characters", detail: "encoded separately" },
+    { title: "Character vectors, 32-d" },
+    { title: "BiLSTM 128 per direction", detail: "the same weights for both addresses", accent: true },
+    { title: "Masked mean pool → vectors u and v" },
+    { title: "Head: [|u−v|; u⊙v] → Linear" },
+    { title: "σ(logit) → P(same)", detail: "same if ≥ 0.5" },
+  ],
   esim: [
     { title: "A and B, as words" },
-    { title: "word2vec 200 (frozen)", detail: "rare tokens get their own fixed random row" },
+    { title: "fastText 200 (frozen)", detail: "built from character n-grams, so every word has a vector" },
     { title: "BiLSTM 200", detail: "same weights for A and B" },
     { title: "Soft alignment", detail: "each word of A attends to B, and B to A", accent: true },
     { title: "Compare: [a; ã; a−ã; a⊙ã]" },
@@ -307,7 +323,7 @@ function EsimFigure() {
   const yB = 196;
   const mid = (yA + yB) / 2;
   const enc: Step[] = [
-    { lines: ["word2vec 200", "(frozen)"], w: 108, tone: "soft" },
+    { lines: ["fastText 200", "(frozen)"], w: 108, tone: "soft" },
     { lines: ["BiLSTM", "200"], w: 76 },
   ];
   const cmp: Step[] = [
@@ -374,6 +390,47 @@ function BiEncoderFigure() {
       <Arrow x1={124} y1={yB} x2={148} y2={yB} />
       <rect x={140} y={yA - 38} width={132} height={yB - yA + 76} rx={12} className="block" />
       <text x={206} y={mid + 4} textAnchor="middle" className="s">
+        same weights
+      </text>
+      {a.el}
+      {b.el}
+      <Arrow x1={a.end} y1={yA} x2={a.end + 26} y2={yA} />
+      <Arrow x1={b.end} y1={yB} x2={b.end + 26} y2={yB} />
+      <Labels x={a.end + 38} y={yA + 5} lines={["u"]} cls="m big" />
+      <Labels x={b.end + 38} y={yB + 5} lines={["v"]} cls="m big" />
+      <path d={`M${a.end + 50},${yA} H${a.end + 66} V${mid - 12} H${xHead - 2}`} className="wire" markerEnd="url(#arr)" />
+      <path d={`M${b.end + 50},${yB} H${b.end + 66} V${mid + 12} H${xHead - 2}`} className="wire" markerEnd="url(#arr)" />
+      <Box x={xHead} y={mid - 27} w={124} h={54} lines={["[|u−v|; u⊙v]"]} />
+      <Arrow x1={xHead + 124} y1={mid} x2={xHead + 150} y2={mid} />
+      <Box x={xHead + 152} y={mid - 22} w={64} h={44} lines={["Linear"]} />
+      <SigmoidOut x={xHead + 216} cy={mid} />
+    </svg>
+  );
+}
+
+/* ---------------- Siamese BiLSTM: two character-level lanes, shared weights ---------------- */
+
+function SiameseFigure() {
+  const yA = 60;
+  const yB = 190;
+  const mid = (yA + yB) / 2;
+  const lane: Step[] = [
+    { lines: ["char", "vectors 32"], w: 88, tone: "soft" },
+    { lines: ["BiLSTM", "128 × 2"], w: 92, tone: "accent" },
+    { lines: ["masked", "mean pool"], w: 92 },
+  ];
+  const a = chain(150, yA, lane);
+  const b = chain(150, yB, lane);
+  const xHead = a.end + 96;
+  return (
+    <svg viewBox="0 0 1080 250" className="fig" role="img" aria-label="Siamese BiLSTM architecture diagram" style={{ ["--fig-min" as string]: "800px" }}>
+      <Defs />
+      <Labels x={70} y={yA + 4} lines={["A (chars)"]} cls="m" />
+      <Labels x={70} y={yB + 4} lines={["B (chars)"]} cls="m" />
+      <Arrow x1={124} y1={yA} x2={148} y2={yA} />
+      <Arrow x1={124} y1={yB} x2={148} y2={yB} />
+      <rect x={140} y={yA - 38} width={a.end - 130} height={yB - yA + 76} rx={12} className="block" />
+      <text x={(140 + a.end + 10) / 2} y={mid + 4} textAnchor="middle" className="s">
         same weights
       </text>
       {a.el}

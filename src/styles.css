@@ -78,6 +78,17 @@ kbd {
 .lede { color: var(--muted); max-width: 520px; margin: 0 auto 28px; line-height: 1.55; font-size: 1.05rem; }
 .legend { list-style: none; padding: 0; margin: 0 0 32px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; color: var(--muted); font-size: 0.9rem; }
 .keys { color: var(--muted); font-size: 0.85rem; margin-top: 20px; }
+
+/* Start screen: difficulty + opponent pickers */
+.pickers { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: 0 0 10px; }
+.pickers label { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; }
+.picker-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.pickers select {
+  min-width: 220px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+}
+.pool-note { color: var(--muted); font-size: 0.85rem; margin: 0 0 24px; }
+.start:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .keys kbd { margin: 0 2px; }
 
 .start, .next {
@@ -249,15 +260,6 @@ kbd {
   border-bottom: 1px solid var(--line); margin: 0 -16px; padding: 0 16px;
 }
 .tabs::-webkit-scrollbar { display: none; }
-/* Desktop/tablet: only the tab row breaks out wider than the content column so all eight tabs sit
-   on one row (they need ~1014px). The name/Share row and the content stay at 880px. Phones use .tabs-compact. */
-@media (min-width: 641px) {
-  .tabs { margin-inline: calc((100% - min(1080px, 100vw)) / 2); }
-}
-/* Mid widths: tighten the tabs so they still fit one row rather than wrapping or scrolling. */
-@media (min-width: 841px) and (max-width: 1080px) {
-  .tabs .tab { padding: 8px clamp(4px, 1.6vw - 6px, 12px) 10px; font-size: clamp(0.78rem, 0.6rem + 0.35vw, 0.9rem); }
-}
 .tab {
   background: none; border: none; color: var(--muted); white-space: nowrap;
   padding: 8px 12px 10px; font-weight: 600; font-size: 0.9rem; border-bottom: 2px solid transparent; margin-bottom: -1px;
@@ -383,15 +385,6 @@ kbd {
 /* ================================ Phones ================================ */
 
 .tabs-compact { display: none; }
-/* Too narrow for eight tabs on one row: use the phone nav (two short rows) instead of scrolling. */
-@media (min-width: 641px) and (max-width: 840px) {
-  .tabs:not(.tabs-compact) { display: none; }
-  .tabs-compact { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
-  .tc-row { display: flex; gap: 4px; }
-  .tc-row .tab { flex: 1; padding: 6px 8px 8px; }
-  .tc-beat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .tc-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 2px; }
-}
 .lbl-short { display: none; }
 
 @media (max-width: 640px) {
@@ -407,7 +400,7 @@ kbd {
   .demo.bad .demo-card.left, .demo.bad .demo-card.right { animation: none; }
   .demo .demo-card { filter: none !important; }
 
-  /* Tabs: row 1 = Free play · The models, row 2 = Beat <every model>, all visible, wrapping. */
+  /* Tabs: Play · The models, as two equal buttons. */
   .tabs:not(.tabs-compact) { display: none; }
   .tabs-compact { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
   .tc-row { display: flex; gap: 4px; }

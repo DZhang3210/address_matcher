@@ -11,11 +11,15 @@ import { AnswerChart } from "./AnswerChart";
 import type { AddressPair, Difficulty } from "./types";
 
 const ROUND_SIZE = 10;
-const POINTS: Record<Difficulty, number> = { easy: 100, medium: 150, hard: 200, absurd: 300 };
+const POINTS: Record<Difficulty, number> = { easy: 100, medium: 150, hard: 200 };
 const DIFFICULTIES = Object.keys(POINTS) as Difficulty[];
 const STREAK_BONUS = 25;
 const BEST_KEY = "same-place:best";
 const TAB_KEY = "same-place:tab";
+const OPP_KEY = "same-place:opponent";
+const DIFF_KEY = "same-place:difficulty";
+
+type DiffChoice = Difficulty | "any";
 const LEAVE_MS = 300; // start screen exit animation, before the game builds in
 
 type Phase = "intro" | "playing" | "done";
@@ -67,24 +71,25 @@ function useIsPhone(): boolean {
 }
 
 /**
- * Free play: endless, the whole pool shuffled (another shuffle is appended when it runs out).
- * Versus a model: ROUND_SIZE pairs, OPPONENT_MISSES it gets wrong + the rest random, shuffled together.
+ * The pairs a round can draw from: the chosen difficulty ("any" = all), and with an opponent only the pairs it gets wrong.
+ * No opponent: endless, the pool shuffled (another shuffle is appended when it runs out).
+ * Versus a model: ROUND_SIZE pairs from its misses (fewer if the pool is smaller).
  */
-const OPPONENT_MISSES = 8;
 const PROGRESS_WINDOW = 10; // dots shown in endless mode: the latest answers + the current pair
-function dealRound(opponent?: Model): AddressPair[] {
-  if (!opponent) return shuffle(PAIRS);
-  const misses = shuffle(PAIRS.filter((p) => !isRight(opponent.id, p))).slice(0, OPPONENT_MISSES);
-  const picked = new Set(misses.map((p) => p.id));
-  const rest = shuffle(PAIRS.filter((p) => !picked.has(p.id))).slice(0, ROUND_SIZE - misses.length);
-  return shuffle([...misses, ...rest]);
+function poolFor(difficulty: DiffChoice, opponent?: Model): AddressPair[] {
+  return PAIRS.filter(
+    (p) => (difficulty === "any" || p.difficulty === difficulty) && (!opponent || !isRight(opponent.id, p))
+  );
+}
+function dealRound(difficulty: DiffChoice, opponent?: Model): AddressPair[] {
+  const pool = shuffle(poolFor(difficulty, opponent));
+  return opponent ? pool.slice(0, ROUND_SIZE) : pool;
 }
 
 /* ================================ App shell ================================ */
 
 const TABS = [
-  { id: "play", label: "Free play" },
-  ...MODELS.map((m) => ({ id: `vs:${m.id}`, label: `Beat ${m.short}` })),
+  { id: "play", label: "Play" },
   { id: "models", label: "The models" },
 ];
 
@@ -102,7 +107,23 @@ export default function App() {
     save(TAB_KEY, id);
     window.scrollTo({ top: 0 });
   };
-  const opponent = tab.startsWith("vs:") ? MODEL_BY_ID[tab.slice(3)] : undefined;
+  const [opponentId, setOpponentId] = useState(() => {
+    const saved = load(OPP_KEY) ?? "";
+    return MODEL_BY_ID[saved] ? saved : "";
+  });
+  const [difficulty, setDifficulty] = useState<DiffChoice>(() => {
+    const saved = load(DIFF_KEY) as DiffChoice | null;
+    return saved && (saved === "any" || saved in POINTS) ? saved : "any";
+  });
+  const chooseOpponent = (id: string) => {
+    setOpponentId(id);
+    save(OPP_KEY, id);
+  };
+  const chooseDifficulty = (d: DiffChoice) => {
+    setDifficulty(d);
+    save(DIFF_KEY, d);
+  };
+  const opponent = opponentId ? MODEL_BY_ID[opponentId] : undefined;
 
   // On a narrow screen the tab row scrolls sideways: keep the active tab in view.
   useEffect(() => {
@@ -133,8 +154,6 @@ export default function App() {
             </button>
           ))}
         </nav>
-        {/* Phones: three items instead of eight; the six "Beat X" tabs fold into one picker. */}
-        {/* Phones: two rows that wrap instead of one row that scrolls. Row 1 = the two main pages, row 2 = every "Beat X". */}
         <nav className="tabs-compact" aria-label="Modes">
           <div className="tc-row">
             <button
@@ -142,7 +161,7 @@ export default function App() {
               onClick={() => setTab("play")}
               aria-current={tab === "play" ? "page" : undefined}
             >
-              Free play
+              Play
             </button>
             <button
               className={"tab" + (tab === "models" ? " active" : "")}
@@ -152,28 +171,26 @@ export default function App() {
               The models
             </button>
           </div>
-          <div className="tc-beat">
-            <span className="tc-label">Beat</span>
-            {MODELS.map((m) => (
-              <button
-                key={m.id}
-                className={"chip" + (tab === `vs:${m.id}` ? " active" : "")}
-                onClick={() => setTab(`vs:${m.id}`)}
-                aria-current={tab === `vs:${m.id}` ? "page" : undefined}
-              >
-                {m.short}
-              </button>
-            ))}
-          </div>
         </nav>
       </header>
 
       {/* Keyed per tab so every switch replays the fade-in. */}
       <div key={tab} className="page-in">
         {tab === "models" ? (
-          <Guide onChallenge={(id) => setTab(`vs:${id}`)} />
+          <Guide
+            onChallenge={(id) => {
+              chooseOpponent(id);
+              setTab("play");
+            }}
+          />
         ) : (
-          <Game key={`${tab}:${visit}`} opponent={opponent} />
+          <Game
+            key={`${tab}:${visit}:${opponentId}:${difficulty}`}
+            opponent={opponent}
+            difficulty={difficulty}
+            onOpponent={chooseOpponent}
+            onDifficulty={chooseDifficulty}
+          />
         )}
       </div>
     </div>
@@ -182,8 +199,18 @@ export default function App() {
 
 /* ================================== Game ================================== */
 
-function Game({ opponent }: { opponent?: Model }) {
-  const bestKey = `${BEST_KEY}:${opponent ? opponent.id : "free"}`;
+function Game({
+  opponent,
+  difficulty,
+  onOpponent,
+  onDifficulty,
+}: {
+  opponent?: Model;
+  difficulty: DiffChoice;
+  onOpponent: (id: string) => void;
+  onDifficulty: (d: DiffChoice) => void;
+}) {
+  const bestKey = `${BEST_KEY}:${opponent ? opponent.id : "free"}:${difficulty}`;
   const endless = !opponent; // free play has no fixed length
   const [phase, setPhase] = useState<Phase>("intro");
   const [deck, setDeck] = useState<AddressPair[]>([]);
@@ -203,7 +230,9 @@ function Game({ opponent }: { opponent?: Model }) {
   const oppRight = opponent ? answers.filter((a) => isRight(opponent.id, a.pair)).length : 0;
 
   const start = useCallback(() => {
-    setDeck(dealRound(opponent));
+    const deck = dealRound(difficulty, opponent);
+    if (deck.length === 0) return; // nothing fits this difficulty + opponent (Start is disabled too)
+    setDeck(deck);
     setIndex(0);
     setAnswers([]);
     setStreak(0);
@@ -211,7 +240,7 @@ function Game({ opponent }: { opponent?: Model }) {
     setPeek(false);
     setPhase("playing");
     window.scrollTo({ top: 0 });
-  }, [opponent]);
+  }, [opponent, difficulty]);
 
   // Start with a short exit animation on the current screen, then build the game in.
   const [leaving, setLeaving] = useState(false);
@@ -254,12 +283,12 @@ function Game({ opponent }: { opponent?: Model }) {
     if (!revealed) return;
     if (index + 1 >= deck.length) {
       if (!endless) return finish();
-      setDeck((d) => [...d, ...shuffle(PAIRS)]); // endless: deal the pool again
+      setDeck((d) => [...d, ...dealRound(difficulty)]); // endless: deal the pool again
     }
     setPeek(false);
     setConfirmEnd(false);
     setIndex((i) => i + 1);
-  }, [revealed, index, deck.length, endless, finish]);
+  }, [revealed, index, deck.length, endless, finish, difficulty]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -289,7 +318,18 @@ function Game({ opponent }: { opponent?: Model }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [phase, revealed, answer, next, begin, finish, endless, confirmEnd]);
 
-  if (phase === "intro") return <Intro best={best} onStart={begin} leaving={leaving} opponent={opponent} />;
+  if (phase === "intro")
+    return (
+      <Intro
+        best={best}
+        onStart={begin}
+        leaving={leaving}
+        opponent={opponent}
+        difficulty={difficulty}
+        onOpponent={onOpponent}
+        onDifficulty={onDifficulty}
+      />
+    );
   if (phase === "done")
     return (
       <Results
@@ -524,12 +564,20 @@ function Intro({
   onStart,
   leaving,
   opponent,
+  difficulty,
+  onOpponent,
+  onDifficulty,
 }: {
   best: number;
   onStart: () => void;
   leaving: boolean;
   opponent?: Model;
+  difficulty: DiffChoice;
+  onOpponent: (id: string) => void;
+  onDifficulty: (d: DiffChoice) => void;
 }) {
+  const poolSize = poolFor(difficulty, opponent).length;
+  const roundSize = opponent ? Math.min(ROUND_SIZE, poolSize) : poolSize;
   return (
     <main className={"intro" + (leaving ? " leaving" : "")}>
       {opponent ? (
@@ -538,8 +586,8 @@ function Intro({
             Beat the <span className="hl">{opponent.short}</span>.
           </h1>
           <p className="lede">
-            {opponent.blurb} It gets <strong>{pct(accuracy(opponent.id))}</strong> of all pairs right, but this round
-            stacks the deck: {OPPONENT_MISSES} of the {ROUND_SIZE} pairs are ones it gets wrong. Can you beat it?
+            {opponent.blurb} It gets <strong>{pct(accuracy(opponent.id))}</strong> of all pairs right, but every pair in
+            this round is one it gets wrong. Can you beat it?
             {opponent.placeholder && <span className="lede-note"> (Its answers are placeholders for now.)</span>}
           </p>
         </>
@@ -561,7 +609,43 @@ function Intro({
           </li>
         ))}
       </ul>
-      <button className={"start" + (leaving ? " pressed" : "")} onClick={onStart}>
+      <div className="pickers">
+        <label>
+          <span className="picker-label">Difficulty</span>
+          <select value={difficulty} onChange={(e) => onDifficulty(e.target.value as DiffChoice)}>
+            {(["any", ...DIFFICULTIES] as DiffChoice[]).map((d) => {
+              const n = poolFor(d, opponent).length;
+              return (
+                <option key={d} value={d} disabled={n === 0}>
+                  {d === "any" ? "Any" : d[0].toUpperCase() + d.slice(1)} ({n.toLocaleString()})
+                </option>
+              );
+            })}
+          </select>
+        </label>
+        <label>
+          <span className="picker-label">Opponent</span>
+          <select value={opponent?.id ?? ""} onChange={(e) => onOpponent(e.target.value)}>
+            <option value="">Everyone</option>
+            {MODELS.map((m) => {
+              const n = poolFor(difficulty, m).length;
+              return (
+                <option key={m.id} value={m.id} disabled={n === 0}>
+                  {m.name} ({n.toLocaleString()} misses)
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      </div>
+      <p className="pool-note">
+        {poolSize === 0
+          ? "No pairs fit this combination."
+          : opponent
+            ? `${roundSize} of its ${poolSize.toLocaleString()} misses${difficulty === "any" ? "" : ` at ${difficulty}`}, at random.`
+            : `${poolSize.toLocaleString()} pairs, endless.`}
+      </p>
+      <button className={"start" + (leaving ? " pressed" : "")} onClick={onStart} disabled={poolSize === 0}>
         Start <span className="go-arrow">→</span> <kbd>Enter</kbd>
       </button>
       <p className="keys">
@@ -716,10 +800,11 @@ function Guide({ onChallenge }: { onChallenge: (modelId: string) => void }) {
     <main className="guide">
       <h1>What each model is good at</h1>
       <p className="lede guide-lede">
-        Six ways to decide whether two records are the same address, from a few lines of string matching to a large
+        Seven ways to decide whether two records are the same address, from a few lines of string matching to a large
         language model. Each one is scored below on all {PAIRS.length.toLocaleString()} pairs in the game: real
-        Connecticut addresses (Overture × Foursquare) from the test split, which none of the trained models saw in
-        training. Difficulty is how many of the five trained models get a pair wrong.
+        Connecticut addresses (Overture × Foursquare) from the validation and test splits. None of the trained models
+        was trained on them; the validation pairs were used to choose when to stop training. Difficulty is how many of the six models with saved answers (all but token overlap) get a pair wrong:
+        none is easy, 1–2 medium, 3–6 hard.
       </p>
 
       <div className="guide-table-wrap">
