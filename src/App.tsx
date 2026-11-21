@@ -10,7 +10,7 @@ import { ShareButton } from "./Share";
 import { AnswerChart } from "./AnswerChart";
 import type { AddressPair, Difficulty } from "./types";
 
-const ROUND_SIZE = 10;
+const ROUND_SIZE = 50;
 const POINTS: Record<Difficulty, number> = { easy: 100, medium: 150, hard: 200 };
 const DIFFICULTIES = Object.keys(POINTS) as Difficulty[];
 const STREAK_BONUS = 25;

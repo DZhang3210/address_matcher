@@ -24,7 +24,7 @@ const FIGURES: Record<string, { n: number; caption: string; refs: Ref[]; svg: ()
   },
   xgb: {
     n: 2,
-    caption: "XGBoost over 23 string-similarity features: 100 trees (depth ≤ 6), each fit to the previous trees' errors; their summed output is a logit.",
+    caption: "XGBoost over 23 features (22 string similarities on the house number, street and ZIP, plus a missing-number flag): 100 trees (depth ≤ 6), each fit to the previous trees' errors; their summed output is a logit.",
     refs: [
       { label: "Chen & Guestrin, XGBoost (2016)", href: "https://arxiv.org/abs/1603.02754" },
       { label: "Lee, Claridades & Lee, address matching with similarity features (2020)", href: "https://doi.org/10.3390/app10165628" },
@@ -35,6 +35,7 @@ const FIGURES: Record<string, { n: number; caption: string; refs: Ref[]; svg: ()
     n: 3,
     caption: "Siamese BiLSTM: one character-level encoder (32-d character vectors → BiLSTM 128 per direction → masked mean pool) reads each address on its own; the two vectors meet only in the head.",
     refs: [
+      { label: "Hochreiter & Schmidhuber, Long Short-Term Memory (1997)", href: "https://doi.org/10.1162/neco.1997.9.8.1735" },
       { label: "Reimers & Gurevych, Sentence-BERT (2019)", href: "https://arxiv.org/abs/1908.10084" },
     ],
     svg: () => <SiameseFigure />,
@@ -45,6 +46,7 @@ const FIGURES: Record<string, { n: number; caption: string; refs: Ref[]; svg: ()
     refs: [
       { label: "Chen et al., Enhanced LSTM for Natural Language Inference (2017)", href: "https://arxiv.org/abs/1609.06038" },
       { label: "Lin et al., deep semantic address matching (2020)", href: "https://doi.org/10.1080/13658816.2019.1681431" },
+      { label: "Bojanowski et al., fastText subword vectors (2017)", href: "https://arxiv.org/abs/1607.04606" },
     ],
     svg: () => <EsimFigure />,
   },
@@ -93,7 +95,7 @@ const FLOWS: Record<string, FlowStep[]> = {
   ],
   xgb: [
     { title: "A, B" },
-    { title: "23 similarity scores", detail: "Jaro-Winkler, Levenshtein, Jaccard, Cosine, … on street · number · ZIP, + missing-number flag" },
+    { title: "23 features", detail: "22 similarities (Jaro-Winkler, Levenshtein, Jaccard, Cosine, …) on street · number · ZIP, + missing-number flag" },
     { title: "100 decision trees", detail: "each one fit to the errors of the ones before", accent: true },
     { title: "logit = tree 1 + tree 2 + … + tree 100" },
     { title: "σ(logit) → P(same)", detail: "same if ≥ 0.5" },
@@ -292,7 +294,7 @@ function TreesFigure() {
         w={186}
         h={120}
         tone="soft"
-        lines={["23 similarity scores", "", "Jaro-Winkler, Levenshtein,", "Jaccard, Cosine, …", "on street · number · ZIP"]}
+        lines={["23 features", "", "22 similarities on", "street · number · ZIP", "+ missing-number flag"]}
       />
       <Arrow x1={270} y1={cy} x2={296} y2={cy} />
       <rect x={298} y={cy - 52} width={310} height={104} rx={12} className="block" />

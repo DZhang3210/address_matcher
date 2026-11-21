@@ -70,17 +70,17 @@ function exported(id: string): (pair: AddressPair) => ModelPrediction {
 
 const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
   xgb: {
-    blurb: "Gradient-boosted trees over 23 hand-built similarity features.",
+    blurb: "Gradient-boosted trees over 23 hand-built features: string similarities on the parsed address, plus a missing-number flag.",
     guide: {
-      how: "Never reads the addresses directly. Each pair becomes 23 similarity scores (Jaro-Winkler, Levenshtein and others on the house number, the street and the ZIP, plus house-number and missing-number flags). 100 small decision trees are added up, each one fixing the previous trees' errors, and a sigmoid turns the sum into P(same).",
+      how: "Never reads the addresses directly. Each address is split into a house number (the leading digits) and a street (the rest), and each pair becomes 22 similarity scores (Jaro-Winkler, Levenshtein and others on the house number, the street and the ZIP) plus a flag for a house number missing on one side. 100 small decision trees are added up, each one fixing the previous trees' errors, and a sigmoid turns the sum into P(same).",
       goodAt: [
-        "House-number mismatches: a different number is a strong feature",
-        "Look-alike streets, when the number and ZIP agree but the street score dips",
-        "Fast and deterministic: one run, no seeds",
+        "Matches where one side has no house number: in the paper it finds 94% of them, the neural models 63–76%",
+        "Different house numbers, and look-alike streets (87% rejected in the paper, with the cross-encoder the most)",
+        "The best ranking of real matches against look-alike streets in the paper (AUC 0.92)",
       ],
       badAt: [
-        "Rewrites no feature captures: a plaza name instead of a street, extra suite or directions text",
-        "Anything where both strings are similar overall but one word decides it",
+        "Finds fewer of the real but differently written matches than most neural models (84% against 87–91% in the paper)",
+        "Addresses that don't start with the house number (a building name first): the split into number and street goes wrong",
       ],
     },
   },
@@ -89,26 +89,27 @@ const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
     guide: {
       how: "Reads each address one character at a time: every character gets a small learned vector, a BiLSTM reads the sequence in both directions, and the mean over all characters becomes one vector per address. The same encoder handles both addresses, and a small head compares the two vectors. Trained from scratch on Connecticut pairs; mean of 3 seeds.",
       goodAt: [
-        "Typos and abbreviations: it reads characters, so no word is ever unknown",
-        "Different house numbers",
+        "Real but differently written matches: 87–89% found in the paper, second only to the bi-encoder",
+        "Different and rare house numbers: it reads the digits, so no number is ever unknown",
       ],
       badAt: [
-        "Look-alike streets: like the bi-encoder, two similar strings become two similar vectors",
-        "Small model, no pretraining: it knows only what the training pairs showed it",
+        "Look-alike streets: like the bi-encoder, two similar strings become two similar vectors (70–73% rejected in the paper)",
+        "Matches where one side has no house number, like every neural model in the paper",
       ],
     },
   },
   esim: {
-    blurb: "A word-level cross-attention model (ESIM) on fastText vectors, reproduced from the address-matching literature.",
+    blurb: "A word-level cross-attention model (ESIM), as used for address matching by Lin et al. (2020), with fastText word vectors.",
     guide: {
-      how: "FastText vectors for each word (built from character n-grams, so every word gets one), a BiLSTM over each address, then soft attention that lines every word of A up with its best match in B. The aligned pairs are compared, pooled and fed to a small classifier. Trained from scratch on Connecticut pairs; the probability shown is the mean of 3 training seeds.",
+      how: "FastText vectors for each word (built from character n-grams, so every word gets one), a BiLSTM over each address, then soft attention that lines every word of A up with a weighted mix of B's words, and B with A's. The aligned pairs are compared, pooled and fed to a small classifier. Trained from scratch on Connecticut pairs; the probability shown is the mean of 3 training seeds.",
       goodAt: [
-        "Lining up the same words in a different order or format",
-        "Typos and rare words: fastText builds their vectors from pieces of the word",
+        "Rare house numbers: fastText builds each number's vector from its digits, which fixes the blind spot of the word2vec version",
+        "Look-alike streets: it rejects more of them than the siamese BiLSTM and the bi-encoder (74–80% in the paper)",
       ],
       badAt: [
-        "Look-alike street names: it rejects fewer of them than the cross-encoder",
-        "Different house numbers: it lets through slightly more than the other trained models",
+        "Look-alike streets still: it rejects fewer of them than XGBoost and the cross-encoder",
+        "Different house numbers: it lets through slightly more than the other trained models (98–99% rejected in the paper)",
+        "Matches where one side has no house number, like every neural model in the paper",
       ],
     },
   },
@@ -117,12 +118,12 @@ const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
     guide: {
       how: "A siamese set-up: the same DistilBERT encoder turns each address into one vector (mean of its token vectors), and a small head compares the two vectors. The addresses never see each other inside the encoder. Fine-tuned on Connecticut pairs; mean of 3 seeds.",
       goodAt: [
-        "Finding true matches written very differently (the highest found rate of all models)",
-        "Abbreviations and formatting, from pretraining",
+        "Finding real but differently written matches: the most of any model in the paper (89–91%)",
+        "Rare house numbers: the tokenizer splits them into known pieces, so none collapses into one unknown token",
       ],
       badAt: [
-        "Look-alike streets: two similar addresses become two similar vectors, so it says same",
-        "Fine, single-character differences get averaged away",
+        "Look-alike streets: the fewest rejected of any model in the paper (58–69%); two similar addresses become two similar vectors",
+        "Threshold-sensitive: it scores many look-alike streets just below the real matches, so only a threshold near 0.99 separates them",
       ],
     },
   },
@@ -131,11 +132,12 @@ const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
     guide: {
       how: "Both addresses go into DistilBERT as one sequence ([CLS] A [SEP] B [SEP]), so attention compares their words directly in every layer. Mean and max pooling over all tokens feed a small classifier. Fine-tuned on Connecticut pairs; mean of 3 seeds.",
       goodAt: [
-        "Rejecting look-alike streets: it sees both spellings side by side",
-        "Pairs where one side has no house number",
+        "Rejecting look-alike streets: it sees both spellings side by side (86–89% in the paper)",
+        "Well-separated scores: almost any threshold works, unlike the bi-encoder",
+        "Of the neural models, the best at ranking matches where one side has no house number (still behind XGBoost)",
       ],
       badAt: [
-        "Strict: it misses more of the real but messy matches than the bi-encoder",
+        "Strict: it finds the fewest real but differently written matches of the trained models (80–83% in the paper)",
         "Slow: every pair needs its own forward pass",
       ],
     },
