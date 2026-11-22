@@ -14,8 +14,12 @@
 const SUPABASE_URL = "https://xvmrqalslwlildmvulpl.supabase.co";
 const SUPABASE_KEY = "sb_publishable_HQ1ysqLwKwUry7eTE43KsA_ln-vPNyC";
 
-/** Bump when the round format or scoring changes, so the data can be split by version. */
-const GAME_VERSION = "2026.11.22";
+/**
+ * Bump when the round format or scoring changes, so the data can be split by version.
+ * 2026.11.22   first logged version (close calls ranked per model)
+ * 2026.11.22.2 close calls = fixed 0.9 / 0.1 bands (ranked only for token overlap); right answers half true, half false pairs
+ */
+const GAME_VERSION = "2026.11.22.2";
 /** Rows from `npm run dev` are tagged so they can be filtered out of the data. */
 const APP_VERSION = import.meta.env.DEV ? `${GAME_VERSION}-dev` : GAME_VERSION;
 

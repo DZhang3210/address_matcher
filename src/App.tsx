@@ -91,25 +91,41 @@ function difficultyFor(pair: AddressPair): Difficulty {
  */
 const MODEL_SCORE: Record<Difficulty, number> = { easy: 5, medium: 7, hard: 8 };
 /**
- * Its right answers use its confidence: Easy draws the ones it's sure about, Hard its close calls.
- * "Close call" is relative and judged separately for matches and non-matches: the least confident
- * CLOSE_SHARE of its right "same" answers, and likewise of its right "different" answers. A fixed cutoff
- * was lopsided: Token overlap is never above 0.9 on a "different", so its Easy rounds were all matches.
+ * Which of its right answers a round uses ("true pair" = same place, "false pair" = different place):
+ *   Easy:   the ones it was sure about: true pairs with P(same) >= 0.9, false pairs with P(same) <= 0.1.
+ *   Medium: any right answer.
+ *   Hard:   its close calls: true pairs with P(same) 0.5–0.9, false pairs with P(same) 0.1–0.5.
+ * Its wrong answers are drawn at random. Its right answers are split evenly between true and false pairs,
+ * so a round doesn't lean toward "same" or "different" (some models are far less sure on false pairs).
+ *
+ * The bands need a real probability with a 0.5 threshold. Token overlap's score is a share of words with a
+ * 0.75 cut-off, and two different addresses almost never share under 10% of their words, so for it "close
+ * call" is relative instead: the least confident CLOSE_SHARE of its right true pairs, and of its right false pairs.
  */
+const SURE = 0.9;
 const CLOSE_SHARE = 0.2;
-const closeCallCache = new Map<string, Set<AddressPair>>();
-function closeCalls(model: Model, right: AddressPair[]): Set<AddressPair> {
+const RANKED_MODELS = new Set(["token-overlap"]);
+const closeCallCache = new Map<string, Set<string>>();
+/** Ids of the right answers that count as close calls for this model. */
+function closeCalls(model: Model, right: AddressPair[]): Set<string> {
   let set = closeCallCache.get(model.id);
   if (!set) {
     const preds = PREDICTIONS[model.id];
     set = new Set();
     for (const isMatch of [true, false]) {
-      const group = right.filter((p) => p.isMatch === isMatch).sort((a, b) => preds[a.id].confidence - preds[b.id].confidence);
-      for (const p of group.slice(0, Math.round(group.length * CLOSE_SHARE))) set.add(p);
+      const group = right.filter((p) => p.isMatch === isMatch);
+      const close = RANKED_MODELS.has(model.id)
+        ? [...group].sort((a, b) => preds[a.id].confidence - preds[b.id].confidence).slice(0, Math.round(group.length * CLOSE_SHARE))
+        : group.filter((p) => preds[p.id].confidence < SURE); // confidence = P(same) on a "same", 1 - P(same) on a "different"
+      for (const p of close) set.add(p.id);
     }
     closeCallCache.set(model.id, set);
   }
   return set;
+}
+/** Take n, preferring `first`, topped up from `then` if it runs short. */
+function takePreferring<T>(n: number, first: T[], then: T[]): T[] {
+  return [...shuffle(first), ...shuffle(then)].slice(0, n);
 }
 const PROGRESS_WINDOW = 10; // dots shown in endless mode: the latest answers + the current pair
 /** No opponent: the pairs of the chosen difficulty ("any" = all). */
@@ -128,13 +144,21 @@ function dealRound(difficulty: DiffChoice, opponent?: Model): AddressPair[] {
   const wrong: AddressPair[] = [];
   for (const p of PAIRS) (preds[p.id].match === p.isMatch ? right : wrong).push(p);
   const close = closeCalls(opponent, right);
-  // Prefer the confidence band for this level, topped up from the rest if a model has too few.
-  const preferred =
-    level === "easy" ? right.filter((p) => !close.has(p)) : level === "hard" ? right.filter((p) => close.has(p)) : right;
-  const inPreferred = new Set(preferred);
-  const others = right.filter((p) => !inPreferred.has(p));
+  const inBand = (p: AddressPair) => (level === "easy" ? !close.has(p.id) : level === "hard" ? close.has(p.id) : true);
   const k = MODEL_SCORE[level];
-  const picks = [...shuffle(preferred), ...shuffle(others)].slice(0, k);
+  // Half true pairs, half false pairs; an odd k gives the extra one to a random side.
+  const kTrue = Math.random() < 0.5 ? Math.ceil(k / 2) : Math.floor(k / 2);
+  const picks: AddressPair[] = [];
+  for (const [isMatch, n] of [[true, kTrue], [false, k - kTrue]] as const) {
+    const side = right.filter((p) => p.isMatch === isMatch);
+    // This side's band first, then the rest of this side if a model has too few.
+    picks.push(...takePreferring(n, side.filter(inBand), side.filter((p) => !inBand(p))));
+  }
+  if (picks.length < k) {
+    // Only if one side ran out entirely: fill from any right answer not already picked.
+    const used = new Set(picks.map((p) => p.id));
+    picks.push(...takePreferring(k - picks.length, right.filter((p) => inBand(p) && !used.has(p.id)), right.filter((p) => !used.has(p.id))));
+  }
   return shuffle([...picks, ...shuffle(wrong).slice(0, ROUND_SIZE - k)]);
 }
 
