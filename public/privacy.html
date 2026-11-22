@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy · Same Place?</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f3ec; --surface: #fff; --ink: #1b1d21; --muted: #6b6f78; --line: #e3ded3; --accent: #e8572a; --ok: #1f9d6b;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #14161a; --surface: #1d2026; --ink: #eceef2; --muted: #9298a3; --line: #2d3139; --accent: #ff7a4d; --ok: #3ccf92; }
+      }
+      html { scrollbar-color: var(--line) var(--bg); }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.6;
+      }
+      main { max-width: 680px; margin: 0 auto; padding: 40px 20px 64px; }
+      a { color: var(--accent); }
+      .back { font-weight: 600; text-decoration: none; }
+      h1 { letter-spacing: -0.03em; font-size: clamp(1.8rem, 5vw, 2.4rem); margin: 24px 0 4px; }
+      h2 { font-size: 1.1rem; margin: 32px 0 8px; }
+      .updated { color: var(--muted); font-size: 0.9rem; margin: 0 0 24px; }
+      ul { padding-left: 1.2em; }
+      li { margin: 4px 0; }
+      code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.88em; }
+      .toggle {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 16px 0;
+      }
+      .toggle p { margin: 0; }
+      .status { font-weight: 700; }
+      .status.on { color: var(--ok); }
+      .status.off { color: var(--muted); }
+      button {
+        font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap;
+        padding: 9px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+      }
+      button:hover { border-color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="/">← Back to the game</a>
+      <h1>Privacy</h1>
+      <p class="updated">Last updated 22 November 2026</p>
+
+      <p>
+        <em>Same Place?</em> records your answers anonymously so people's choices can be compared with the
+        address-matching models in the game. The results may be written up in a follow-up study.
+        No account, name or contact details are ever collected.
+      </p>
+
+      <div class="toggle">
+        <p>Recording my answers: <span class="status" id="status">…</span></p>
+        <button type="button" id="toggle">…</button>
+      </div>
+      <p id="gpc" hidden>
+        Your browser sends a Global Privacy Control signal, so nothing is recorded regardless of this setting.
+      </p>
+
+      <h2>What is recorded</h2>
+      <p>One entry for each pair you answer:</p>
+      <ul>
+        <li>which address pair it was, what you answered, and whether that was right;</li>
+        <li>how long you took to answer, and whether the tab was in the background meanwhile;</li>
+        <li>its position in the round, and the opponent and difficulty you picked;</li>
+        <li>whether the screen is phone-sized or larger, and the game version;</li>
+        <li>a random code for the current visit and one for the current round, so answers from the same
+          round or visit can be grouped. The visit code is forgotten when you close the tab, so separate
+          visits can't be linked to each other.</li>
+      </ul>
+
+      <h2>What is not recorded</h2>
+      <ul>
+        <li>No name, email, account or login.</li>
+        <li>No IP address or location is stored with your answers.</li>
+        <li>No typing or free text, no cookies, no advertising or cross-site tracking.</li>
+      </ul>
+
+      <h2>Why</h2>
+      <p>
+        To learn which address pairs people find hard, how long they take, and whether people and models
+        get the same pairs wrong. Results will be shared only as summaries, or as an anonymous dataset of
+        the fields listed above.
+      </p>
+
+      <h2>Where it is stored and for how long</h2>
+      <p>
+        Answers are stored in a database hosted by <a href="https://supabase.com/privacy">Supabase</a>.
+        The game itself is served by <a href="https://vercel.com/legal/privacy-policy">Vercel</a>, and its fonts
+        by <a href="https://policies.google.com/privacy">Google Fonts</a>. Like most web services, these
+        providers may keep short-lived technical logs (such as IP addresses) for security and reliability;
+        those logs are not part of the study data. Answers are kept for up to three years, after which they
+        are deleted or published only as the anonymous dataset described above.
+      </p>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li>Turn recording off with the switch above. It applies to this browser on this device.</li>
+        <li>If your browser sends <a href="https://globalprivacycontrol.org/">Global Privacy Control</a>, nothing is recorded.</li>
+        <li>Because answers aren't linked to you, there's no way to look up or delete a particular person's
+          answers afterwards. Turning recording off stops new answers from being saved.</li>
+      </ul>
+
+      <h2>Contact</h2>
+      <p>
+        Questions or concerns: open an issue on
+        <a href="https://github.com/DZhang3210/address_matcher/issues">the project's GitHub page</a>.
+      </p>
+    </main>
+    <script>
+      // Same storage key as src/lib/telemetry.ts (OPT_OUT_KEY).
+      const KEY = "same-place:no-logging";
+      const status = document.getElementById("status");
+      const button = document.getElementById("toggle");
+      const gpc = navigator.globalPrivacyControl === true;
+      document.getElementById("gpc").hidden = !gpc;
+      function optedOut() {
+        try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+      }
+      function render() {
+        const on = !optedOut() && !gpc;
+        status.textContent = on ? "on" : "off";
+        status.className = "status " + (on ? "on" : "off");
+        button.textContent = optedOut() ? "Turn recording on" : "Turn recording off";
+        button.disabled = gpc;
+      }
+      button.addEventListener("click", () => {
+        try {
+          if (optedOut()) localStorage.removeItem(KEY);
+          else localStorage.setItem(KEY, "1");
+        } catch {}
+        render();
+      });
+      render();
+    </script>
+  </body>
+</html>

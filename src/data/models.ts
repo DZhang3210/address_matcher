@@ -75,8 +75,7 @@ const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
       how: "Never reads the addresses directly. Each address is split into a house number (the leading digits) and a street (the rest), and each pair becomes 22 similarity scores (Jaro-Winkler, Levenshtein and others on the house number, the street and the ZIP) plus a flag for a house number missing on one side. 100 small decision trees are added up, each one fixing the previous trees' errors, and a sigmoid turns the sum into P(same).",
       goodAt: [
         "Matches where one side has no house number: in the paper it finds 94% of them, the neural models 63–76%",
-        "Different house numbers, and look-alike streets (87% rejected in the paper, with the cross-encoder the most)",
-        "The best ranking of real matches against look-alike streets in the paper (AUC 0.92)",
+        "Different house numbers and look-alike streets: it rejects 87% of look-alikes in the paper (with the cross-encoder the most), and ranks real matches above them best of all (AUC 0.92)",
       ],
       badAt: [
         "Finds fewer of the real but differently written matches than most neural models (84% against 87–91% in the paper)",
@@ -104,10 +103,10 @@ const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
       how: "FastText vectors for each word (built from character n-grams, so every word gets one), a BiLSTM over each address, then soft attention that lines every word of A up with a weighted mix of B's words, and B with A's. The aligned pairs are compared, pooled and fed to a small classifier. Trained from scratch on Connecticut pairs; the probability shown is the mean of 3 training seeds.",
       goodAt: [
         "Rare house numbers: fastText builds each number's vector from its digits, which fixes the blind spot of the word2vec version",
-        "Look-alike streets: it rejects more of them than the siamese BiLSTM and the bi-encoder (74–80% in the paper)",
+        "Real but differently written matches: it finds 87% of them in this game's pairs, as many as the siamese BiLSTM and more than XGBoost (84%) or the cross-encoder (82%)",
       ],
       badAt: [
-        "Look-alike streets still: it rejects fewer of them than XGBoost and the cross-encoder",
+        "Look-alike streets: it rejects 74–80% in the paper, more than the siamese BiLSTM and the bi-encoder but fewer than XGBoost and the cross-encoder",
         "Different house numbers: it lets through slightly more than the other trained models (98–99% rejected in the paper)",
         "Matches where one side has no house number, like every neural model in the paper",
       ],
@@ -122,8 +121,7 @@ const GUIDES: Record<string, Pick<Model, "blurb" | "guide">> = {
         "Rare house numbers: the tokenizer splits them into known pieces, so none collapses into one unknown token",
       ],
       badAt: [
-        "Look-alike streets: the fewest rejected of any model in the paper (58–69%); two similar addresses become two similar vectors",
-        "Threshold-sensitive: it scores many look-alike streets just below the real matches, so only a threshold near 0.99 separates them",
+        "Look-alike streets: the fewest rejected of any model in the paper (58–69%). Two similar addresses become two similar vectors, scored just below the real matches, so only a threshold near 0.99 separates them",
       ],
     },
   },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { PAIRS } from "./data/game";
 import { MODELS, MODEL_BY_ID, PREDICTIONS, accuracy, isRight, type Model } from "./data/models";
@@ -8,9 +8,16 @@ import { ModelDiagram } from "./Diagrams";
 import { Demo } from "./Demo";
 import { ShareButton } from "./Share";
 import { AnswerChart } from "./AnswerChart";
+import { Picker } from "./Picker";
+import { logAnswer, loggingEnabled, newId } from "./lib/telemetry";
 import type { AddressPair, Difficulty } from "./types";
 
-const ROUND_SIZE = 50;
+/** The study this game comes from: the blog write-up, and the full paper it links to. */
+const WRITEUP_URL = "https://dzhang3210.github.io/posts/address-matching/";
+const PAPER_URL =
+  "https://github.com/DZhang3210/address-matching-by-pair-type/blob/main/paper/address-matching-by-pair-type.pdf";
+
+const ROUND_SIZE = 10; // short, so a first game gives feedback fast
 const POINTS: Record<Difficulty, number> = { easy: 100, medium: 150, hard: 200 };
 const DIFFICULTIES = Object.keys(POINTS) as Difficulty[];
 const STREAK_BONUS = 25;
@@ -71,37 +78,64 @@ function useIsPhone(): boolean {
 }
 
 /**
- * Difficulty of a pair.
- * Against everyone: the pair's own level (how many of the 6 exported models miss it; same as The models page).
- * Against one model: that model's confidence in the right answer: sure and right (>= SURE) easy,
- * right but unsure medium, wrong hard. For the exported models the confidence is P(right answer).
+ * A pair's own difficulty: how many of the 6 exported models miss it (same as The models page).
+ * It sets the pair's badge and points in every mode, so "hard" always means a tricky pair.
  */
-const SURE = 0.9;
-function difficultyFor(pair: AddressPair, opponent?: Model): Difficulty {
-  if (!opponent) return pair.difficulty;
-  const p = PREDICTIONS[opponent.id][pair.id];
-  if (p.match !== pair.isMatch) return "hard";
-  return p.confidence >= SURE ? "easy" : "medium";
+function difficultyFor(pair: AddressPair): Difficulty {
+  return pair.difficulty;
 }
 
 /**
- * The pairs a round can draw from: the chosen difficulty ("any" = all), judged against the opponent if there is one.
- * No opponent: endless, the pool shuffled (another shuffle is appended when it runs out).
- * Versus a model: ROUND_SIZE pairs from the pool (fewer if the pool is smaller).
+ * Versus a model, the round's difficulty is how strong the opponent plays: out of ROUND_SIZE pairs, exactly
+ * this many are ones it gets right. It is always below ROUND_SIZE, so a perfect round always wins.
  */
-const OPPONENT_ROUND: Record<DiffChoice, string> = {
-  any: "This round mixes pairs it gets right and wrong.",
-  easy: "Every pair in this round is one it gets right, and is sure about.",
-  medium: "Every pair in this round is one it gets right, but without much confidence.",
-  hard: "Every pair in this round is one it gets wrong.",
-};
-const PROGRESS_WINDOW = 10; // dots shown in endless mode: the latest answers + the current pair
-function poolFor(difficulty: DiffChoice, opponent?: Model): AddressPair[] {
-  return PAIRS.filter((p) => difficulty === "any" || difficultyFor(p, opponent) === difficulty);
+const MODEL_SCORE: Record<Difficulty, number> = { easy: 5, medium: 7, hard: 8 };
+/**
+ * Its right answers use its confidence: Easy draws the ones it's sure about, Hard its close calls.
+ * "Close call" is relative and judged separately for matches and non-matches: the least confident
+ * CLOSE_SHARE of its right "same" answers, and likewise of its right "different" answers. A fixed cutoff
+ * was lopsided: Token overlap is never above 0.9 on a "different", so its Easy rounds were all matches.
+ */
+const CLOSE_SHARE = 0.2;
+const closeCallCache = new Map<string, Set<AddressPair>>();
+function closeCalls(model: Model, right: AddressPair[]): Set<AddressPair> {
+  let set = closeCallCache.get(model.id);
+  if (!set) {
+    const preds = PREDICTIONS[model.id];
+    set = new Set();
+    for (const isMatch of [true, false]) {
+      const group = right.filter((p) => p.isMatch === isMatch).sort((a, b) => preds[a.id].confidence - preds[b.id].confidence);
+      for (const p of group.slice(0, Math.round(group.length * CLOSE_SHARE))) set.add(p);
+    }
+    closeCallCache.set(model.id, set);
+  }
+  return set;
 }
+const PROGRESS_WINDOW = 10; // dots shown in endless mode: the latest answers + the current pair
+/** No opponent: the pairs of the chosen difficulty ("any" = all). */
+function poolFor(difficulty: DiffChoice): AddressPair[] {
+  return PAIRS.filter((p) => difficulty === "any" || p.difficulty === difficulty);
+}
+/**
+ * No opponent: endless, the pool shuffled (another shuffle is appended when it runs out).
+ * Versus a model: MODEL_SCORE[difficulty] pairs it gets right plus the rest from pairs it gets wrong, shuffled.
+ */
 function dealRound(difficulty: DiffChoice, opponent?: Model): AddressPair[] {
-  const pool = shuffle(poolFor(difficulty, opponent));
-  return opponent ? pool.slice(0, ROUND_SIZE) : pool;
+  if (!opponent) return shuffle(poolFor(difficulty));
+  const level: Difficulty = difficulty === "any" ? "easy" : difficulty;
+  const preds = PREDICTIONS[opponent.id];
+  const right: AddressPair[] = [];
+  const wrong: AddressPair[] = [];
+  for (const p of PAIRS) (preds[p.id].match === p.isMatch ? right : wrong).push(p);
+  const close = closeCalls(opponent, right);
+  // Prefer the confidence band for this level, topped up from the rest if a model has too few.
+  const preferred =
+    level === "easy" ? right.filter((p) => !close.has(p)) : level === "hard" ? right.filter((p) => close.has(p)) : right;
+  const inPreferred = new Set(preferred);
+  const others = right.filter((p) => !inPreferred.has(p));
+  const k = MODEL_SCORE[level];
+  const picks = [...shuffle(preferred), ...shuffle(others)].slice(0, k);
+  return shuffle([...picks, ...shuffle(wrong).slice(0, ROUND_SIZE - k)]);
 }
 
 /* ================================ App shell ================================ */
@@ -119,7 +153,10 @@ export default function App() {
   // Bumped on every navigation so even re-clicking the current tab (or the logo)
   // leaves a round in progress and returns to that tab's start screen.
   const [visit, setVisit] = useState(0);
+  // The models page opens scrolled to this model when reached from the start screen's "About the …" link.
+  const [guideFocus, setGuideFocus] = useState<string | undefined>();
   const setTab = (id: string) => {
+    setGuideFocus(undefined); // a plain tab click opens the models page at the top
     setTabState(id);
     setVisit((v) => v + 1);
     save(TAB_KEY, id);
@@ -142,8 +179,8 @@ export default function App() {
     save(DIFF_KEY, d);
   };
   const opponent = opponentId ? MODEL_BY_ID[opponentId] : undefined;
-  // Everyone: one option, all pairs. One model: easy / medium / hard by its own confidence (Hard if nothing was picked yet).
-  const roundDifficulty: DiffChoice = opponent ? (difficulty === "any" ? "hard" : difficulty) : "any";
+  // Everyone: one option, all pairs. One model: easy / medium / hard = how many it gets right (Easy if nothing was picked yet).
+  const roundDifficulty: DiffChoice = opponent ? (difficulty === "any" ? "easy" : difficulty) : "any";
 
   // On a narrow screen the tab row scrolls sideways: keep the active tab in view.
   useEffect(() => {
@@ -160,7 +197,13 @@ export default function App() {
             </span>
             Same Place?
           </button>
-          <ShareButton />
+          <div className="topbar-actions">
+            <a className="writeup-link" href={WRITEUP_URL} target="_blank" rel="noopener noreferrer">
+              <span className="writeup-long">Read the write-up</span>
+              <span className="writeup-short">Write-up</span> ↗
+            </a>
+            <ShareButton />
+          </div>
         </div>
         <nav className="tabs" aria-label="Modes">
           {TABS.map((t) => (
@@ -198,6 +241,7 @@ export default function App() {
       <div key={tab} className="page-in">
         {tab === "models" ? (
           <Guide
+            focus={guideFocus}
             onChallenge={(id) => {
               chooseOpponent(id);
               setTab("play");
@@ -210,6 +254,10 @@ export default function App() {
             difficulty={roundDifficulty}
             onOpponent={chooseOpponent}
             onDifficulty={chooseDifficulty}
+            onAbout={(id) => {
+              setTab("models");
+              setGuideFocus(id);
+            }}
           />
         )}
       </div>
@@ -224,13 +272,17 @@ function Game({
   difficulty,
   onOpponent,
   onDifficulty,
+  onAbout,
 }: {
   opponent?: Model;
   difficulty: DiffChoice;
   onOpponent: (id: string) => void;
   onDifficulty: (d: DiffChoice) => void;
+  onAbout: (modelId?: string) => void;
 }) {
-  const bestKey = `${BEST_KEY}:${opponent ? opponent.id : "free"}:${difficulty}`;
+  // Versus rounds are keyed by round format ("v2": 10 pairs, difficulty = the model's score), so bests from
+  // the old 50-pair rounds, where difficulty meant something else, don't carry over.
+  const bestKey = `${BEST_KEY}:${opponent ? `v2:${opponent.id}:${difficulty}` : `free:${difficulty}`}`;
   const endless = !opponent; // free play has no fixed length
   const [phase, setPhase] = useState<Phase>("intro");
   const [deck, setDeck] = useState<AddressPair[]>([]);
@@ -249,9 +301,27 @@ function Game({
   const youRight = answers.filter((a) => a.correct).length;
   const oppRight = opponent ? answers.filter((a) => isRight(opponent.id, a.pair)).length : 0;
 
+  // Anonymous answer logging (src/lib/telemetry.ts): when the current pair appeared, and whether
+  // the tab went to the background while it was up (that answer's time is then meaningless).
+  const roundId = useRef("");
+  const shownAt = useRef(0);
+  const wasHidden = useRef(false);
+  useEffect(() => {
+    shownAt.current = performance.now();
+    wasHidden.current = document.hidden;
+  }, [deck, index]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) wasHidden.current = true;
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
   const start = useCallback(() => {
     const deck = dealRound(difficulty, opponent);
     if (deck.length === 0) return; // nothing fits this difficulty + opponent (Start is disabled too)
+    roundId.current = newId();
     setDeck(deck);
     setIndex(0);
     setAnswers([]);
@@ -280,12 +350,24 @@ function Game({
       if (!current || revealed) return;
       const correct = guess === current.isMatch;
       const newStreak = correct ? streak + 1 : 0;
-      const points = correct ? POINTS[difficultyFor(current, opponent)] + STREAK_BONUS * (newStreak - 1) : 0;
+      const points = correct ? POINTS[difficultyFor(current)] + STREAK_BONUS * (newStreak - 1) : 0;
       setStreak(newStreak);
       setBestStreak((b) => Math.max(b, newStreak));
       setAnswers((as) => [...as, { pair: current, guess, correct, points }]);
+      logAnswer({
+        roundId: roundId.current,
+        position: index,
+        pairId: current.id,
+        guess,
+        correct,
+        responseMs: performance.now() - shownAt.current,
+        wasHidden: wasHidden.current,
+        opponent: opponent?.id ?? null,
+        difficulty,
+        device: window.matchMedia?.(PHONE_QUERY).matches ? "phone" : "desktop",
+      });
     },
-    [current, revealed, streak, opponent]
+    [current, revealed, streak, opponent, index, difficulty]
   );
 
   const finish = useCallback(() => {
@@ -348,6 +430,7 @@ function Game({
         difficulty={difficulty}
         onOpponent={onOpponent}
         onDifficulty={onDifficulty}
+        onAbout={onAbout}
       />
     );
   if (phase === "done")
@@ -406,7 +489,7 @@ function Game({
         <span>
           Do these two records point to the <em>same address</em>?
         </span>
-        <span className={`diff diff-${difficultyFor(current, opponent)}`}>{difficultyFor(current, opponent)}</span>
+        <span className={`diff diff-${difficultyFor(current)}`}>{difficultyFor(current)}</span>
       </p>
 
       <div className="stage">
@@ -587,6 +670,7 @@ function Intro({
   difficulty,
   onOpponent,
   onDifficulty,
+  onAbout,
 }: {
   best: number;
   onStart: () => void;
@@ -595,9 +679,10 @@ function Intro({
   difficulty: DiffChoice;
   onOpponent: (id: string) => void;
   onDifficulty: (d: DiffChoice) => void;
+  onAbout: (modelId?: string) => void;
 }) {
-  const poolSize = poolFor(difficulty, opponent).length;
-  const roundSize = opponent ? Math.min(ROUND_SIZE, poolSize) : poolSize;
+  const poolSize = opponent ? ROUND_SIZE : poolFor(difficulty).length;
+  const level: Difficulty = difficulty === "any" ? "easy" : difficulty;
   return (
     <main className={"intro" + (leaving ? " leaving" : "")}>
       {opponent ? (
@@ -606,8 +691,7 @@ function Intro({
             Beat the <span className="hl">{opponent.short}</span>.
           </h1>
           <p className="lede">
-            {opponent.blurb} It gets <strong>{pct(accuracy(opponent.id))}</strong> of all pairs right.{" "}
-            {OPPONENT_ROUND[difficulty]} Can you beat it?
+            {opponent.blurb} Can you beat it?
             {opponent.placeholder && <span className="lede-note"> (Its answers are placeholders for now.)</span>}
           </p>
         </>
@@ -630,45 +714,39 @@ function Intro({
         ))}
       </ul>
       <div className="pickers">
-        <label>
-          <span className="picker-label">Difficulty</span>
-          <select
-            value={difficulty}
-            onChange={(e) => onDifficulty(e.target.value as DiffChoice)}
-            disabled={!opponent}
-            title={opponent ? undefined : "Pick an opponent to choose a difficulty"}
-          >
-            {((opponent ? DIFFICULTIES : ["any"]) as DiffChoice[]).map((d) => {
-              const n = poolFor(d, opponent).length;
-              return (
-                <option key={d} value={d} disabled={n === 0}>
-                  {d === "any" ? "All pairs" : d[0].toUpperCase() + d.slice(1)} ({n.toLocaleString()})
-                </option>
-              );
-            })}
-          </select>
-        </label>
-        <label>
-          <span className="picker-label">Opponent</span>
-          <select value={opponent?.id ?? ""} onChange={(e) => onOpponent(e.target.value)}>
-            <option value="">Everyone</option>
-            {MODELS.map((m) => {
-              const n = poolFor(difficulty, m).length;
-              return (
-                <option key={m.id} value={m.id} disabled={n === 0}>
-                  {m.short}
-                </option>
-              );
-            })}
-          </select>
-        </label>
+        <Picker<DiffChoice>
+          label="Difficulty"
+          value={difficulty}
+          onChange={onDifficulty}
+          disabled={!opponent}
+          title={opponent ? undefined : "Pick an opponent to choose a difficulty"}
+          options={((opponent ? DIFFICULTIES : ["any"]) as DiffChoice[]).map((d) =>
+            d === "any"
+              ? { value: d, label: "All pairs", hint: poolSize.toLocaleString() }
+              : { value: d, label: d[0].toUpperCase() + d.slice(1), hint: `it gets ${MODEL_SCORE[d]}/${ROUND_SIZE}` },
+          )}
+        />
+        <Picker<string>
+          label="Opponent"
+          value={opponent?.id ?? ""}
+          onChange={onOpponent}
+          options={[
+            { value: "", label: "Everyone" },
+            // Each model's accuracy over all pairs, so players can pick an opponent by strength.
+            ...MODELS.map((m) => ({ value: m.id, label: m.short, hint: `${pct(accuracy(m.id))} acc` })),
+          ]}
+        />
       </div>
       <p className="pool-note">
         {poolSize === 0
           ? "No pairs fit this combination."
           : opponent
-            ? `${roundSize} of ${poolSize.toLocaleString()} pairs, at random. Difficulty is judged by the ${opponent.short}'s own confidence.`
+            ? `The ${opponent.short} gets ${MODEL_SCORE[level]} of ${ROUND_SIZE} right. Get ${MODEL_SCORE[level] + 1} to win.`
             : `${poolSize.toLocaleString()} pairs, endless.`}
+        <br />
+        <button type="button" className="learn-more" onClick={() => onAbout(opponent?.id)}>
+          {opponent ? `Learn more about the ${opponent.short}` : "Learn more about the models"} →
+        </button>
       </p>
       <button className={"start" + (leaving ? " pressed" : "")} onClick={onStart} disabled={poolSize === 0}>
         Start <span className="go-arrow">→</span> <kbd>Enter</kbd>
@@ -676,6 +754,12 @@ function Intro({
       <p className="keys">
         <kbd>Y</kbd>/<kbd>←</kbd> same · <kbd>N</kbd>/<kbd>→</kbd> different · <kbd>S</kbd> show pair
         {best > 0 && <> · best score {best}</>}
+      </p>
+      <p className="privacy-note">
+        {loggingEnabled()
+          ? "Answers are recorded anonymously to compare people with the models."
+          : "Recording of your answers is off."}{" "}
+        <a href="/privacy.html">Privacy &amp; opt-out</a>
       </p>
       {opponent ? <ModelDiagram model={opponent} /> : <Demo />}
     </main>
@@ -749,32 +833,65 @@ function Results({
   const right = answers.filter((a) => a.correct).length;
   const misses = answers.filter((a) => !a.correct);
 
+  const n = answers.length;
+  let tone: "win" | "lose" | "even";
+  let headline: string;
   let rating: string;
+  // Versus a model the round always has it scoring MODEL_SCORE (5-8 of 10), so a plain comparison is fair.
+  const theirs = opponent ? answers.filter((a) => isRight(opponent.id, a.pair)).length : 0;
   if (opponent) {
-    const theirs = answers.filter((a) => isRight(opponent.id, a.pair)).length;
-    rating =
-      right > theirs
-        ? `You beat the ${opponent.short}, ${right}–${theirs}.`
-        : right < theirs
-          ? `The ${opponent.short} wins, ${theirs}–${right}.`
-          : `Dead heat with the ${opponent.short}, ${right}–${theirs}.`;
+    const name = `the ${opponent.short}`;
+    if (right > theirs) {
+      tone = "win";
+      headline = right === n ? "Flawless!" : "You got it!";
+      rating = `You got ${right} of ${n}, ${name} got ${theirs}.`;
+    } else if (right < theirs) {
+      tone = "lose";
+      headline = "Aw, shucks.";
+      rating = `You got ${right} of ${n}, but ${name} got ${theirs}.`;
+    } else {
+      tone = "even";
+      headline = "Dead even.";
+      rating = `You both got ${right} of ${n}. One more would have won it.`;
+    }
   } else {
+    const pct = n ? right / n : 0;
+    tone = pct >= 0.8 ? "win" : pct > 0.5 ? "even" : "lose";
+    headline = right === n && n > 0 ? "Flawless!" : pct >= 0.8 ? "Sharp eye!" : pct > 0.5 ? "Not bad." : "Rough round.";
     rating =
-      right === answers.length
-        ? "Flawless. You may be a geocoder."
-        : right >= 0.8 * answers.length
-          ? "Sharp eye."
-          : right >= 0.5 * answers.length
-            ? "Not bad. Addresses are hard."
-            : "The addresses won this round.";
+      right === n && n > 0
+        ? "You may be a geocoder."
+        : pct >= 0.8
+          ? `${right} of ${n} right.`
+          : pct > 0.5
+            ? "Addresses are hard."
+            : `${right} of ${n} is ${pct === 0.5 ? "no better than" : "worse than"} guessing. The addresses won this one.`;
   }
 
   return (
     <main className={"results" + (leaving ? " leaving" : "")}>
-      <div className="big">
-        {right}
-        <span>/{answers.length}</span>
-      </div>
+      <h1 className={`verdict verdict-${tone}`}>{headline}</h1>
+      {opponent ? (
+        <div className="faceoff" aria-label={`You ${right}, ${opponent.short} ${theirs}, out of ${n}`}>
+          <div className={"side" + (right > theirs ? " ahead" : "")}>
+            <div className="side-name">You</div>
+            <div className="big">{right}</div>
+          </div>
+          <div className="faceoff-vs">
+            vs
+            <span>out of {n}</span>
+          </div>
+          <div className={"side" + (theirs > right ? " ahead" : "")}>
+            <div className="side-name">{opponent.short}</div>
+            <div className="big">{theirs}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="big">
+          {right}
+          <span>/{n}</span>
+        </div>
+      )}
       <p className="rating">{rating}</p>
       <div className="hud results-hud">
         <Stat label="Score" value={score} />
@@ -814,13 +931,22 @@ function Results({
       <button className={"start" + (leaving ? " pressed" : "")} onClick={onAgain}>
         Play again <span className="go-arrow">→</span> <kbd>Enter</kbd>
       </button>
+      <p className="study-note">
+        Why do pairs like these trip up people and models?{" "}
+        <a href={WRITEUP_URL} target="_blank" rel="noopener noreferrer">
+          Read the write-up ↗
+        </a>
+      </p>
     </main>
   );
 }
 
 /* ================================== Guide ================================== */
 
-function Guide({ onChallenge }: { onChallenge: (modelId: string) => void }) {
+function Guide({ focus, onChallenge }: { focus?: string; onChallenge: (modelId: string) => void }) {
+  useEffect(() => {
+    if (focus) document.getElementById(`model-${focus}`)?.scrollIntoView({ block: "start" });
+  }, [focus]);
   return (
     <main className="guide">
       <h1>What each model is good at</h1>
@@ -830,6 +956,17 @@ function Guide({ onChallenge }: { onChallenge: (modelId: string) => void }) {
         Connecticut addresses (Overture × Foursquare) from the validation and test splits. None of the trained models
         was trained on them; the validation pairs were used to choose when to stop training. Difficulty is how many of the six models with saved answers (all but token overlap) get a pair wrong:
         none is easy, 1–2 medium, 3–6 hard.
+      </p>
+      <p className="study-note guide-study">
+        From a study comparing these models on the same pairs:{" "}
+        <a href={WRITEUP_URL} target="_blank" rel="noopener noreferrer">
+          read the write-up ↗
+        </a>{" "}
+        or the{" "}
+        <a href={PAPER_URL} target="_blank" rel="noopener noreferrer">
+          full paper (PDF) ↗
+        </a>
+        . Figures marked "in the paper" come from there.
       </p>
 
       <div className="guide-table-wrap">
@@ -869,7 +1006,7 @@ function Guide({ onChallenge }: { onChallenge: (modelId: string) => void }) {
       {MODELS.map((m) => {
         const misses = PAIRS.filter((p) => !isRight(m.id, p));
         return (
-          <article key={m.id} className="model-article">
+          <article key={m.id} id={`model-${m.id}`} className="model-article">
             <header>
               <h2>
                 {m.name}

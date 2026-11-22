@@ -35,6 +35,10 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* Tell the browser about the dark theme so its own scrollbars and controls follow it,
+   then tint the page scrollbar to the page background so it doesn't stand out. */
+:root { color-scheme: light dark; }
+html { scrollbar-color: var(--line) var(--bg); }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -81,21 +85,72 @@ kbd {
 
 /* Start screen: difficulty + opponent pickers */
 .pickers { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: 0 0 10px; }
-.pickers label { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; }
-.picker-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-.pickers select {
-  min-width: 220px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink); font: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+.picker { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 6px; text-align: left; min-width: 220px; }
+.model-article { scroll-margin-top: 20px; } /* room above it when the start screen's link jumps here */
+/* Same look as the pool note it sits in, just underlined. */
+.learn-more {
+  background: none; border: none; padding: 0; margin-top: 2px; font: inherit; color: inherit;
+  text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, var(--muted) 45%, transparent);
 }
+.learn-more:hover { color: var(--accent); text-decoration-color: currentColor; }
+.picker-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.picker-button {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 14px; border-radius: 14px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.picker-button:not(:disabled):hover { border-color: color-mix(in srgb, var(--muted) 55%, var(--line)); }
+.picker-button:focus-visible, .picker.open .picker-button {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.picker-button:not(:disabled):active { transform: scale(0.985); }
+.picker-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.picker-value { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.picker-hint { color: var(--muted); font-weight: 500; font-size: 0.82em; font-variant-numeric: tabular-nums; }
+.picker-chevron { width: 14px; height: 14px; flex: none; color: var(--muted); transition: transform 0.2s; }
+.picker.open .picker-chevron { transform: rotate(180deg); }
+.picker-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20;
+  list-style: none; margin: 0; padding: 6px; max-height: min(400px, 60vh); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  animation: picker-in 0.14s ease-out;
+  /* Only short screens need to scroll; keep that scrollbar thin and quiet. */
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.picker-menu::-webkit-scrollbar { width: 6px; }
+.picker-menu::-webkit-scrollbar-track { background: transparent; margin: 8px 0; }
+.picker-menu::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+@keyframes picker-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+.picker-option {
+  display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 9px;
+  font-size: 0.92rem; font-weight: 600; cursor: pointer; user-select: none;
+}
+.picker-option > span:first-child { flex: 1; white-space: nowrap; }
+.picker-option .picker-hint { white-space: nowrap; margin-left: 12px; }
+/* Wider than the button when names + hints need it (e.g. "Cross-encoder   85% right"). */
+.picker-menu { right: auto; min-width: 100%; width: max-content; }
+.picker-option.active { background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.picker-option[aria-selected="true"] { color: var(--accent); }
+.picker-option[aria-disabled] { opacity: 0.4; cursor: not-allowed; }
+.picker-check { width: 13px; height: 13px; flex: none; visibility: hidden; }
+.picker-option[aria-selected="true"] .picker-check { visibility: visible; }
+@media (prefers-reduced-motion: reduce) { .picker-menu { animation: none; } }
 .pool-note { color: var(--muted); font-size: 0.85rem; margin: 0 0 24px; }
 @media (max-width: 640px) {
   /* Phones: the two pickers side by side, half the width each. */
   .pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .pickers label { min-width: 0; }
-  .pickers select { min-width: 0; width: 100%; padding: 8px 22px 8px 8px; font-size: 0.8rem; text-overflow: ellipsis; }
+  .picker { min-width: 0; }
+  .picker-button { padding: 9px 10px; font-size: 0.8rem; border-radius: 12px; }
+  .picker-option { font-size: 0.82rem; padding: 8px; }
+  /* Phones: the right-hand picker's menu opens leftward so it stays on screen. */
+  .picker:last-child .picker-menu { left: auto; right: 0; }
 }
 .start:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .keys kbd { margin: 0 2px; }
+.privacy-note { color: var(--muted); font-size: 0.75rem; margin: 8px 0 0; opacity: 0.85; }
+.privacy-note a { color: inherit; text-underline-offset: 2px; }
 
 .start, .next {
   background: var(--ink); color: var(--bg); border: none; border-radius: 12px;
@@ -210,6 +265,17 @@ kbd {
 
 /* Results */
 .results { text-align: center; padding: 32px 0; }
+.verdict { font-size: clamp(1.8rem, 6vw, 2.6rem); letter-spacing: -0.03em; margin: 0 0 8px; }
+.verdict-win { color: var(--ok); }
+.verdict-lose { color: var(--bad); }
+.verdict-even { color: var(--ink); }
+/* Versus a model: both scores side by side; the leader at full strength, the other faded. */
+.faceoff { display: flex; justify-content: center; align-items: center; gap: clamp(16px, 5vw, 40px); }
+.faceoff .side { min-width: 0; color: var(--muted); }
+.faceoff .side.ahead { color: var(--ink); }
+.faceoff .side-name { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+.faceoff-vs { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--muted); font-weight: 700; font-size: 1.1rem; }
+.faceoff-vs span { font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
 .big { font-size: clamp(4rem, 16vw, 7rem); font-weight: 800; letter-spacing: -0.05em; line-height: 1; }
 .big span { color: var(--muted); font-size: 0.4em; letter-spacing: 0; }
 .rating { font-size: 1.15rem; margin: 10px 0 22px; }
@@ -354,6 +420,11 @@ kbd {
 .guide { padding: 24px 0 8px; }
 .guide h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); letter-spacing: -0.03em; margin: 0 0 12px; }
 .guide-lede { margin: 0 0 28px; max-width: 640px; }
+/* Quiet links back to the study (models page intro, end of the results screen). */
+.study-note { color: var(--muted); font-size: 0.85rem; margin: 18px 0 0; line-height: 1.6; }
+.study-note a { color: var(--ink); text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent); }
+.study-note a:hover { color: var(--accent); text-decoration-color: currentColor; }
+.guide-lede + .guide-study { margin: -16px 0 28px; max-width: 640px; }
 .guide-table-wrap { overflow-x: auto; margin-bottom: 36px; }
 .guide-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 .guide-table th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; padding: 8px; border-bottom: 1px solid var(--line); }
@@ -471,6 +542,18 @@ kbd {
   color: var(--ink); border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 0.88rem;
 }
 .share-btn:hover { border-color: var(--ink); }
+.topbar-actions { display: flex; align-items: center; gap: 16px; }
+.writeup-link {
+  color: var(--muted); font-weight: 600; font-size: 0.88rem; text-decoration: none; white-space: nowrap;
+  transition: color 0.15s;
+}
+.writeup-link:hover { color: var(--ink); }
+.writeup-short { display: none; }
+@media (max-width: 640px) {
+  .writeup-long { display: none; }
+  .writeup-short { display: inline; }
+  .topbar-actions { gap: 12px; }
+}
 .share-modal { border-color: var(--line); text-align: center; width: min(360px, 100%); }
 .share-modal p { margin-bottom: 12px; }
 .qr { background: #fff; border-radius: 12px; padding: 10px; width: min(240px, 70vw); margin: 0 auto 12px; line-height: 0; }
